@@ -11,30 +11,34 @@ on:
       - main
 
 jobs:
-  build:
-    name: Build, lint and unit tests
+  build-panel:
+    name: Build, lint and unit tests (panel)
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        working-directory: packages/panel
     outputs:
       plugin-id: ${{ steps.metadata.outputs.plugin-id }}
       plugin-version: ${{ steps.metadata.outputs.plugin-version }}
       has-e2e: ${{ steps.check-for-e2e.outputs.has-e2e }}
-      has-backend: ${{ steps.check-for-backend.outputs.has-backend }}
     env:
       GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Setup Node.js environment
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install dependencies
         run: npm ci
+        working-directory: .
 
       - name: Check types
         run: npm run typecheck
@@ -45,45 +49,10 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Check for backend
-        id: check-for-backend
-        run: |
-          if [ -f "Magefile.go" ]
-          then
-            echo "has-backend=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup Go environment
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Lint backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
-        with:
-          version: latest
-          args: ./...
-
-      - name: Build backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: magefile/mage-action@6f50bbb8ea47d56e62dee92392788acbc8192d0b # v3.1.0
-        with:
-          version: latest
-          args: buildAll
-
-      - name: Test backend
-        if: steps.check-for-backend.outputs.has-backend == 'true'
-        uses: magefile/mage-action@6f50bbb8ea47d56e62dee92392788acbc8192d0b # v3.1.0
-        with:
-          version: latest
-          args: test
-
       - name: Check for E2E
         id: check-for-e2e
         run: |
-          if [ -f "playwright/config.ts" ]
+          if [ -f "../../playwright/config.ts" ]
           then
             echo "has-e2e=true" >> $GITHUB_OUTPUT
           fi
@@ -95,7 +64,7 @@ jobs:
       - name: Get plugin metadata
         id: metadata
         run: |
-          sudo apt-get install jq
+          sudo apt-get install -y jq
 
           export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
           export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
@@ -123,11 +92,43 @@ jobs:
           ARCHIVE: ${{ steps.metadata.outputs.archive }}
 
       - name: Archive Build
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.metadata.outputs.plugin-id }}-${{ steps.metadata.outputs.plugin-version }}
-          path: ${{ steps.metadata.outputs.plugin-id }}
+          path: packages/panel/${{ steps.metadata.outputs.plugin-id }}
           retention-days: 5
+
+  build-datasource:
+    name: Build, lint and unit tests (datasource)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/datasource
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: .
+
+      - name: Check types
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm run test:ci
+      - name: Build frontend
+        run: npm run build
 
   resolve-versions:
     name: Resolve e2e images
@@ -135,13 +136,13 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 3
-    needs: build
-    if: ${{ needs.build.outputs.has-e2e == 'true' }}
+    needs: build-panel
+    if: ${{ needs.build-panel.outputs.has-e2e == 'true' }}
     outputs:
       matrix: ${{ steps.resolve-versions.outputs.matrix }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
@@ -152,7 +153,7 @@ jobs:
           version-resolver-type: version-support-policy
 
   playwright-tests:
-    needs: [resolve-versions, build]
+    needs: [resolve-versions, build-panel]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -165,26 +166,22 @@ jobs:
     name: e2e test ${{ matrix.GRAFANA_IMAGE.name }}@${{ matrix.GRAFANA_IMAGE.VERSION }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Download plugin
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
-          path: dist
-          name: ${{ needs.build.outputs.plugin-id }}-${{ needs.build.outputs.plugin-version }}
-
-      - name: Execute permissions on binary
-        if: needs.build.outputs.has-backend == 'true'
-        run: |
-          chmod +x ./dist/gpx_*
+          path: packages/panel/dist
+          name: ${{ needs.build-panel.outputs.plugin-id }}-${{ needs.build-panel.outputs.plugin-version }}
 
       - name: Setup Node.js environment
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
 
       - name: Install dev dependencies
         run: npm ci
@@ -193,6 +190,7 @@ jobs:
         run: |
           docker compose pull
           ANONYMOUS_AUTH_ENABLED=false DEVELOPMENT=false GRAFANA_VERSION=${{ matrix.GRAFANA_IMAGE.VERSION }} GRAFANA_IMAGE=${{ matrix.GRAFANA_IMAGE.NAME }} docker compose up -d
+        working-directory: packages/panel
 
       - name: Wait for grafana server
         uses: grafana/plugin-actions/wait-for-grafana@wait-for-grafana/v1.0.2
@@ -209,6 +207,7 @@ jobs:
       - name: Upload e2e test summary
         uses: grafana/plugin-actions/playwright-gh-pages/upload-report-artifacts@upload-report-artifacts/v1.0.1
         if: ${{ always() && !cancelled() }}
+        continue-on-error: true
         with:
           upload-report: false
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -219,18 +218,11 @@ jobs:
         if: ${{ always() && steps.run-tests.outcome == 'failure' }}
         run: |
           docker logs jaegertracing-jaeger-panel >& grafana-server.log
+        working-directory: packages/panel
 
       - name: Stop grafana docker
         run: docker compose down
-
-      # Uncomment this step to upload the server log to Github artifacts. Remember Github artifacts are public on the Internet if the repository is public.
-      # - name: Upload server log
-      #   uses: actions/upload-artifact@v4
-      #   if: ${{ always() && steps.run-tests.outcome == 'failure' }}
-      #   with:
-      #     name: ${{ matrix.GRAFANA_IMAGE.NAME }}-v${{ matrix.GRAFANA_IMAGE.VERSION }}-${{github.run_id}}-server-log
-      #     path: grafana-server.log
-      #     retention-days: 5
+        working-directory: packages/panel
 
   publish-report:
     if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -241,7 +233,7 @@ jobs:
     needs: [playwright-tests]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Publish report

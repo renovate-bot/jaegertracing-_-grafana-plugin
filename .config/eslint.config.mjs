@@ -9,6 +9,27 @@ import { defineConfig } from 'eslint/config';
 import grafanaConfig from '@grafana/eslint-config/flat.js';
 
 export default defineConfig([
+  {
+    ignores: [
+      '**/logs',
+      '**/*.log',
+      '**/npm-debug.log*',
+      '**/yarn-debug.log*',
+      '**/yarn-error.log*',
+      '**/.pnpm-debug.log*',
+      '**/node_modules/',
+      '**/dist/',
+      '**/artifacts/',
+      '**/coverage/',
+      '**/work/',
+      '**/ci/',
+      'test-results/',
+      'playwright-report/',
+      'playwright/.cache/',
+      'playwright/.auth/',
+      '**/.eslintcache',
+    ],
+  },
   ...grafanaConfig,
   {
     rules: {

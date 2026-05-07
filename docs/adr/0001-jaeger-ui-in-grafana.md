@@ -1,7 +1,7 @@
 # ADR 0001: Embedding Jaeger Trace Visualizations in Grafana
 
-* **Status**: In progress (Phase 1 complete)
-* **Last Updated**: 2026-05-06
+* **Status**: In progress (Phase 3 in progress)
+* **Last Updated**: 2026-05-07
 
 ---
 
@@ -241,20 +241,30 @@ The Go backend binary (Phase 5), if it needs to import Jaeger internals, will do
 
 ```
 grafana-plugin/
-├── src/                      # TypeScript frontend (panel + datasource)
-│   ├── components/           # Panel React components
-│   ├── types.ts              # Plugin option types
-│   └── module.ts             # Plugin entry point
-├── pkg/                      # Go backend (added in Phase 5)
-│   └── plugin/
-│       ├── main.go
-│       └── proxy.go          # CallResource SPA reverse proxy
+├── packages/
+│   ├── panel/                # Panel plugin (jaegertracing-jaeger-panel)
+│   │   ├── src/
+│   │   │   ├── components/   # JaegerPanel React component
+│   │   │   ├── types.ts
+│   │   │   ├── module.ts
+│   │   │   └── plugin.json
+│   │   ├── tests/            # Playwright e2e tests
+│   │   ├── provisioning/     # Grafana provisioning for dev
+│   │   └── package.json
+│   └── datasource/           # Datasource plugin (jaegertracing-jaeger-datasource)
+│       ├── src/
+│       │   ├── components/   # QueryEditor
+│       │   ├── datasource/   # DataSource class
+│       │   ├── types.ts
+│       │   ├── module.ts
+│       │   └── plugin.json
+│       └── package.json
+├── provisioning/             # Combined provisioning for root docker-compose
+├── docker-compose.yaml       # Grafana + Jaeger + HotROD for local dev
 ├── docs/
-│   └── adr/                  # Architecture Decision Records
-├── plugin.json               # Grafana plugin manifest
-├── package.json              # Frontend build config
-├── Magefile.go               # Go build (added in Phase 5)
-└── dist/                     # Build output (gitignored)
+│   └── adr/
+├── package.json              # npm workspaces root
+└── Makefile
 ```
 
 ---
@@ -349,9 +359,19 @@ The phases are ordered to reduce project risk as early as possible. The first tw
 
 ---
 
-#### Phase 3 — Datasource plugin + CI (1–2 weeks)
+#### Phase 3 — Datasource plugin + CI (1–2 weeks) — 🔄 IN PROGRESS
 
 **Goal:** A real datasource plugin that drives the panel from a QueryEditor, plus automated CI that prevents regressions. This is the first phase with significant engineering investment, justified now that the core approach is validated.
+
+**Note on panel/datasource relationship:** The panel plugin and datasource plugin are currently independent. The panel takes a `jaegerBaseUrl` directly in its panel options and renders an iframe — it does not use the Grafana datasource system. The datasource plugin proxies Jaeger API calls through the Grafana backend. Connecting the two (panel reads the Jaeger URL from the selected datasource) is deferred to a later phase.
+
+**Validated (2026-05-07):** The datasource proxy chain works end-to-end without Phase 5. Verified manually:
+1. Generated HotROD traffic at `http://localhost:8080`.
+2. Opened Grafana Explore, selected the Jaeger datasource.
+3. Confirmed the Service dropdown populated live from Jaeger (`frontend`, `customer`, `driver`, `route`) via the Grafana backend proxy.
+4. Selected a service, ran a query — received a table of trace IDs and span counts as a DataFrame result.
+
+This confirms that API calls (service/operation discovery, trace search) work server-side through the proxy without any browser-to-Jaeger connectivity. The iframe in the panel still points directly at the Jaeger URL from the browser — the Phase 5 Go binary is needed to route the iframe through the same proxy for deployments where Jaeger is not browser-reachable.
 
 **Tasks:**
 

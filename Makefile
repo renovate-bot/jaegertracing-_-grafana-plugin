@@ -1,10 +1,7 @@
-.PHONY: build dev test lint server e2e
+.PHONY: build test lint server panel-% datasource-%
 
 build:
 	npm run build
-
-dev:
-	npm run dev
 
 test:
 	npm run test:ci
@@ -13,7 +10,10 @@ lint:
 	npm run lint
 
 server:
-	npm run server
+	docker compose up --build
 
-e2e:
-	npm run e2e
+panel-%:
+	npm run $* --workspace=packages/panel
+
+datasource-%:
+	npm run $* --workspace=packages/datasource

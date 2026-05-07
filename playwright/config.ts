@@ -5,12 +5,12 @@ import { dirname } from 'node:path';
 const pluginE2eAuth = `${dirname(require.resolve('@grafana/plugin-e2e'))}/auth`;
 
 export default defineConfig<PluginOptions>({
-  testDir: '../tests',
-  outputDir: '.test-results',
+  testDir: './tests',
+  outputDir: './playwright/.test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  reporter: [['html', { outputFolder: '.report', open: 'never' }]],
+  reporter: [['html', { outputFolder: './playwright/.report', open: 'never' }]],
   use: {
     baseURL: process.env.GRAFANA_URL || 'http://localhost:3000',
     trace: 'on-first-retry',

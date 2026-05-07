@@ -1,0 +1,8 @@
+services:
+  grafana:
+    extends:
+      file: .config/docker-compose-base.yaml
+      service: grafana
+    volumes:
+      # override base: point provisioning at repo root since packages/panel/provisioning doesn't exist
+      - ../../provisioning:/etc/grafana/provisioning

@@ -1,3 +1,7 @@
 node_modules/
 dist/
+.eslintcache
+playwright/.auth/
+playwright/.report/
+playwright/.test-results/
 
