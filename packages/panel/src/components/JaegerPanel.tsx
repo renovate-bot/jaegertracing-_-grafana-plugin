@@ -1,5 +1,5 @@
 import React from 'react';
-import { PanelProps } from '@grafana/data';
+import { FieldType, PanelProps } from '@grafana/data';
 import { JaegerPanelOptions } from 'types';
 
 type Props = PanelProps<JaegerPanelOptions>;
@@ -17,12 +17,25 @@ function resolveBase(raw: string): string | null {
   return trimmed;
 }
 
+function traceEmbedParams(options: JaegerPanelOptions): URLSearchParams {
+  const params = new URLSearchParams({ uiEmbed: 'v0' });
+  if (options.hideTimelineMinimap) {
+    params.set('uiTimelineHideMinimap', '1');
+  }
+  if (options.hideTimelineSummary) {
+    params.set('uiTimelineHideSummary', '1');
+  }
+  if (options.collapseTraceHeader) {
+    params.set('uiTimelineCollapseTitle', '1');
+  }
+  return params;
+}
+
 function buildUrl(options: JaegerPanelOptions, replaceVariables: Props['replaceVariables']): string | null {
   const base = resolveBase(replaceVariables(options.jaegerBaseUrl));
   if (!base) {
     return null;
   }
-  const params = new URLSearchParams({ uiEmbed: 'v0' });
 
   switch (options.mode) {
     case 'trace': {
@@ -30,16 +43,7 @@ function buildUrl(options: JaegerPanelOptions, replaceVariables: Props['replaceV
       if (!traceId) {
         return null;
       }
-      if (options.hideTimelineMinimap) {
-        params.set('uiTimelineHideMinimap', '1');
-      }
-      if (options.hideTimelineSummary) {
-        params.set('uiTimelineHideSummary', '1');
-      }
-      if (options.collapseTraceHeader) {
-        params.set('uiTimelineCollapseTitle', '1');
-      }
-      return `${base}/trace/${encodeURIComponent(traceId)}?${params}`;
+      return `${base}/trace/${encodeURIComponent(traceId)}?${traceEmbedParams(options)}`;
     }
 
     case 'diff': {
@@ -48,28 +52,18 @@ function buildUrl(options: JaegerPanelOptions, replaceVariables: Props['replaceV
       if (!traceId || !traceIdB) {
         return null;
       }
-      if (options.hideTimelineMinimap) {
-        params.set('uiTimelineHideMinimap', '1');
-      }
-      if (options.hideTimelineSummary) {
-        params.set('uiTimelineHideSummary', '1');
-      }
-      if (options.collapseTraceHeader) {
-        params.set('uiTimelineCollapseTitle', '1');
-      }
-      return `${base}/trace/${encodeURIComponent(traceId)}...${encodeURIComponent(traceIdB)}?${params}`;
+      return `${base}/trace/${encodeURIComponent(traceId)}...${encodeURIComponent(traceIdB)}?${traceEmbedParams(options)}`;
     }
 
     case 'search': {
       // Jaeger auto-submits the search query on load; without a service it errors immediately.
-      // Until jaeger-ui suppresses the auto-query in embed mode (Phase 2), require a service.
+      // Until jaeger-ui suppresses the auto-query in embed mode (Phase 4), require a service.
       const service = replaceVariables(options.service ?? '').trim();
       if (!service) {
         return null;
       }
-      params.set('uiSearchHideGraph', '1');
-      params.set('service', service);
-      return `${base}/search?${params}`;
+      const searchParams = new URLSearchParams({ uiEmbed: 'v0', uiSearchHideGraph: '1', service });
+      return `${base}/search?${searchParams}`;
     }
 
     default:
@@ -90,7 +84,50 @@ function hint(options: JaegerPanelOptions, replaceVariables: Props['replaceVaria
   return 'Enter a Trace ID in panel options.';
 }
 
-export const JaegerPanel: React.FC<Props> = ({ options, width, height, replaceVariables }) => {
+// Extract a single trace ID from a DataFrame delivered by the Jaeger datasource.
+// Returns null if the frame has zero rows or more than one row (multi-row = search results,
+// handled separately by the datasource's data links / splitOpen flow).
+function traceIdFromData(data: Props['data']): string | null {
+  for (const frame of data.series) {
+    const field = frame.fields.find((f) => f.name === 'traceID' && f.type === FieldType.string);
+    if (field && frame.length === 1) {
+      const value = field.values.get ? field.values.get(0) : (field.values as unknown as string[])[0];
+      if (typeof value === 'string' && value) {
+        return value;
+      }
+    }
+  }
+  return null;
+}
+
+// Minimum iframe height ensures the trace view is usable in Explore's split pane,
+// where Grafana allocates only the remaining viewport height after the query builder.
+const MIN_IFRAME_HEIGHT = 600;
+
+export const JaegerPanel: React.FC<Props> = ({ options, data, width, height, replaceVariables }) => {
+  const iframeHeight = Math.max(height, MIN_IFRAME_HEIGHT);
+  // DataFrame-driven path: when the Jaeger datasource delivers a single-row trace frame
+  // (via Explore or a datasource-linked panel), render the iframe directly from that trace ID.
+  // The base URL still comes from panel options — proxy mode (Phase 3) will change this.
+  const frameTraceId = traceIdFromData(data);
+  if (frameTraceId) {
+    const base = resolveBase(replaceVariables(options.jaegerBaseUrl));
+    if (base) {
+      const url = `${base}/trace/${encodeURIComponent(frameTraceId)}?${traceEmbedParams(options)}`;
+      return (
+        <iframe
+          src={url}
+          width={width}
+          height={iframeHeight}
+          style={{ border: 'none', display: 'block' }}
+          title="Jaeger Trace"
+          data-testid="jaeger-panel-iframe"
+        />
+      );
+    }
+  }
+
+  // Panel-options path: dashboard panels with $traceId variable, search mode, diff mode.
   const url = buildUrl(options, replaceVariables);
 
   if (!url) {
@@ -116,7 +153,7 @@ export const JaegerPanel: React.FC<Props> = ({ options, width, height, replaceVa
     <iframe
       src={url}
       width={width}
-      height={height}
+      height={iframeHeight}
       style={{ border: 'none', display: 'block' }}
       title="Jaeger Trace"
       data-testid="jaeger-panel-iframe"

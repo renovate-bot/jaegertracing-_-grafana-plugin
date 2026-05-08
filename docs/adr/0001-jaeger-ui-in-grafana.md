@@ -1,6 +1,6 @@
 # ADR 0001: Embedding Jaeger Trace Visualizations in Grafana
 
-* **Status**: In progress (Phase 3 in progress)
+* **Status**: In progress (Phase 3 next)
 * **Last Updated**: 2026-05-07
 
 ---
@@ -71,12 +71,24 @@ A Grafana panel plugin receives a trace ID — from a dashboard variable, from a
 - The panel plugin renders the trace for `$traceId`.
 - For trace diff, two variables `$traceIdA` and `$traceIdB` are used.
 
+**The two-panel dashboard pattern (primary intended UX):**
+
+The best dashboard experience combines a search results table with the Jaeger panel on the same dashboard, connected via a `$traceId` variable:
+
+1. A **table panel** (using the Jaeger datasource) shows search results with `traceID` and `spanCount` columns.
+2. Each `traceID` cell has a data link that updates `$traceId` and stays on the current page: `d/${__dashboard.uid}?var-traceId=${__value.raw}` (or use Grafana's variable setter link syntax).
+3. The **Jaeger panel** below or beside the table reads `${traceId}` from the dashboard variable and renders the trace iframe.
+
+Clicking a row in the table updates the URL variable and the trace panel rerenders inline — no page navigation, no split-pane cramping, full panel width for the trace view.
+
+This is architecturally cleaner than `splitOpen()` for iframe-based rendering and is the pattern to document and build example dashboards around.
+
 **What is required:**
 - One panel plugin. No datasource work.
 - The trace ID must reach the panel via dashboard variables or panel options. This is standard Grafana.
 
 **Limitations:**
-- No search UI. Users must know the trace ID in advance, or navigate to Jaeger UI to search and then return with an ID.
+- No search UI built into the panel itself. The table panel requires the Jaeger datasource to be configured.
 - No Explore integration. The Grafana log-to-trace split-pane flow still uses Grafana's built-in `TraceView`.
 
 ### Level 2: Full Explore Integration (Search → List → Detail)
@@ -89,6 +101,14 @@ A community Jaeger datasource plugin + panel plugin pair that replaces the built
 - Results are either rendered as Jaeger's search page in an iframe, or as a Grafana table with trace IDs.
 - Clicking a trace ID opens the Jaeger trace view (iframe or native components).
 - The datasource sets `preferredVisualisationPluginId` on its result frames, routing them to the Jaeger panel plugin automatically.
+
+**Why `splitOpen()` is a poor fit for the iframe panel:**
+
+Grafana's `splitOpen()` mechanism — used internally when clicking a trace ID in Explore — opens a second Explore pane side-by-side at half the viewport width. The second pane is a full Explore panel with its own query builder form at the top (in Trace ID mode), occupying substantial vertical space before the trace view begins. The built-in Jaeger datasource has exactly the same experience. At half-screen width, the Jaeger timeline is cramped and the column drag handles stop working.
+
+There is no "compact" split-pane mode in Grafana. The half-width full-Explore experience is the same for all datasources that use `splitOpen()`. For our iframe panel, it is particularly uncomfortable because Jaeger UI needs horizontal space that is simply not available.
+
+**Consequence for our plugin:** `splitOpen()` (triggered by clicking a trace ID data link in our search results table) works but is awkward. It is retained as a convenience for users already in Explore who want a quick look at a trace. The primary intended UX for trace viewing is the dashboard two-panel pattern described under Level 1.
 
 **What is required:**
 - One panel plugin (same as Level 1).
@@ -233,9 +253,9 @@ This avoids the Option B refactor but carries the same browser-reachable-Jaeger 
 
 The plugin lives in its own dedicated repository (`github.com/jaegertracing/grafana-plugin`). This keeps the plugin versioning, releases, CI, and Grafana plugin catalog submission independent of the Jaeger core release cycle. It also avoids introducing Node.js/webpack toolchain into the main Jaeger Go repo, and sidesteps CNCF license compliance concerns around Grafana's AGPLv3 dependencies (`@grafana/ui`, `@grafana/data`, `@grafana/runtime`) which are not approved for inclusion in Apache-2.0 CNCF projects.
 
-The Go backend binary (Phase 5), if it needs to import Jaeger internals, will do so as a regular Go module dependency (`github.com/jaegertracing/jaeger`).
+The Go backend binary (Phase 3), if it needs to import Jaeger internals, will do so as a regular Go module dependency (`github.com/jaegertracing/jaeger`).
 
-**Jaeger UI changes** (`uiEmbed` flag additions in Phase 2, `uiLinkPatterns` in Phase 4) are PRs to the jaeger-ui repo, released independently and consumed here via npm.
+**Jaeger UI changes** (`uiEmbed` flag additions in Phase 4, `uiLinkPatterns` in Phase 5) are PRs to the jaeger-ui repo, released independently and consumed here via npm.
 
 **Repository layout:**
 
@@ -323,7 +343,8 @@ The phases are ordered to reduce project risk as early as possible. The first tw
 - **uiEmbed gap identified**: search page (`/search?uiEmbed=v0`) auto-submits a traces query on load before the user picks a service, producing "HTTP Error: parameter 'service' is required". Fix needed in jaeger-ui: suppress the auto-query when `uiEmbed` is set and no service is pre-selected. Workaround: pass `service=<name>` in the URL — confirmed working. The panel's search mode should accept an optional service param from panel options or a dashboard variable. This is an input for Phase 2.
 - **Confirmed**: diff mode (`/trace/A...B?uiEmbed=v0`) renders correctly.
 - **uiEmbed gap — zoom isolation**: browser zoom applies to Grafana chrome only; the iframe renders at its own zoom level. This is a fundamental iframe constraint. No fix available at the panel level; users must zoom inside the iframe separately (or use the standalone pop-out link).
-- **uiEmbed gap — diff graph resize**: the TraceDiff graph does not reflow when the Grafana panel is resized. The timeline view is unaffected. The diff graph likely uses a fixed or one-time-computed SVG layout. Fix needed in jaeger-ui: listen for window resize (or a `postMessage` resize signal) and re-layout the graph. This is an input for Phase 2.
+- **uiEmbed gap — diff graph resize**: the TraceDiff graph does not reflow when the Grafana panel is resized. The timeline view is unaffected. The diff graph likely uses a fixed or one-time-computed SVG layout. Fix needed in jaeger-ui: listen for window resize (or a `postMessage` resize signal) and re-layout the graph. This is an input for Phase 4.
+- **uiEmbed gap — timeline column resize handle missing**: in the standalone Jaeger UI the timeline columns (span name / duration bar) are individually resizable by dragging the column boundary. Inside the Grafana iframe the drag handle does not appear on mouseover at all. Root cause unknown — likely a CSS pointer-events or z-index conflict introduced by the iframe stacking context, or a `mousemove` event that does not fire correctly when the cursor is at the iframe boundary. Needs investigation in jaeger-ui; filed for Phase 4.
 
 ---
 
@@ -345,114 +366,41 @@ The phases are ordered to reduce project risk as early as possible. The first tw
 
 ---
 
-#### Phase 2 — Jaeger UI `uiEmbed` improvements (parallel with Phase 1, jaeger-ui repo)
+#### Phase 2 — Datasource plugin + CI (1–2 weeks) — ✅ COMPLETE (2026-05-07)
 
-**Goal:** Address the UX gaps identified in Phase 0 so the embedded experience is clean.
+**Goal:** A working datasource plugin connected to the panel plugin so Explore and dashboards are usable end-to-end, plus CI that prevents regressions.
 
-**Tasks:**
-1. Audit existing `uiEmbed` flags against the embedded UX observed in Phase 0.
-2. Add `uiTimelineHideViewSwitcher=1` to suppress the view-type toolbar (timeline/graph/flamegraph/statistics switcher) when only the timeline is needed.
-3. Add any other flags identified in Phase 0 (e.g., hiding the search bar in the trace detail header).
-4. Files: `packages/jaeger-ui/src/utils/embedded-url.ts`, `packages/jaeger-ui/src/types/embedded.ts`, `TracePageHeader/AltViewOptions.tsx`.
+**What was built:**
+- Datasource plugin (`JaegerDataSource`) with `testDatasource()`, `getServices()`, `getOperations()`, and `query()`.
+- Search results DataFrame: `traceID` (with "Open in Explore" data link), `traceName` (service: operation of root span), `spanCount`, `duration` (µs).
+- Trace lookup DataFrame: single-row `traceID` frame with `preferredVisualisationPluginId` routing to the Jaeger panel.
+- `QueryEditor` with search/trace modes, service/operation selects (populated live from Jaeger), tags, duration, limit fields. Service field accepts Grafana variable syntax (e.g. `${service}`).
+- Grafana template variable interpolation via `getTemplateSrv().replace()` for all query string fields.
+- Panel DataFrame-driven rendering path: single-row `traceID` frame → iframe; multi-row or no data → falls through to panel-options path.
+- Panel minimum iframe height (600px) so the trace is usable in Explore's split pane.
+- Provisioned two-panel dashboard: narrow search results table (w=6) + wide trace detail panel (w=18), connected via `$traceId` variable. Clicking "Open in dashboard" sets the variable and rerenders inline.
+- CI pipeline: build, lint, unit tests, Playwright e2e tests.
+- Provisioned datasource with stable `uid: jaeger` for reliable dashboard references.
 
-**Exit criterion:** The embedded trace view has no extraneous chrome; the UX is comparable to a native panel.
+**Validated (2026-05-07):**
+- Service discovery and trace search flow through the Grafana backend proxy; no browser-to-Jaeger API traffic.
+- Search results table shows `traceName`, `spanCount`, `duration`, with two context-menu links per row: "Open in dashboard" (sets `$traceId` variable, stays on page) and "Open in Explore" (`splitOpen()`, second pane renders trace iframe).
+- `preferredVisualisationPluginId` routes trace-ID lookup results to the Jaeger panel automatically in Explore.
+- Iframe base URL falls back to `http://localhost:16686` (panel default) in Explore's second pane, which works for local dev. Production deployments require Phase 3.
 
----
+**Constraints carried forward to Phase 3:**
+- Iframe base URL must still be configured manually in panel options (`jaegerBaseUrl`). The Grafana backend proxy path is not usable for iframe navigation; Phase 3's Go binary resolves this by serving the Jaeger UI from the Grafana origin.
+- `splitOpen()` in Explore opens a cramped half-width second pane (same behaviour as the built-in Jaeger datasource). The two-panel dashboard pattern is the recommended UX for trace viewing.
 
-#### Phase 3 — Datasource plugin + CI (1–2 weeks) — 🔄 IN PROGRESS
-
-**Goal:** A real datasource plugin that drives the panel from a QueryEditor, plus automated CI that prevents regressions. This is the first phase with significant engineering investment, justified now that the core approach is validated.
-
-**Note on panel/datasource relationship:** The panel plugin and datasource plugin are currently independent. The panel takes a `jaegerBaseUrl` directly in its panel options and renders an iframe — it does not use the Grafana datasource system. The datasource plugin proxies Jaeger API calls through the Grafana backend. Connecting the two (panel reads the Jaeger URL from the selected datasource) is deferred to a later phase.
-
-**Validated (2026-05-07):** The datasource proxy chain works end-to-end without Phase 5. Verified manually:
-1. Generated HotROD traffic at `http://localhost:8080`.
-2. Opened Grafana Explore, selected the Jaeger datasource.
-3. Confirmed the Service dropdown populated live from Jaeger (`frontend`, `customer`, `driver`, `route`) via the Grafana backend proxy.
-4. Selected a service, ran a query — received a table of trace IDs and span counts as a DataFrame result.
-
-This confirms that API calls (service/operation discovery, trace search) work server-side through the proxy without any browser-to-Jaeger connectivity. The iframe in the panel still points directly at the Jaeger URL from the browser — the Phase 5 Go binary is needed to route the iframe through the same proxy for deployments where Jaeger is not browser-reachable.
-
-**Tasks:**
-
-1. **Datasource plugin class** (`src/datasource/DataSource.ts`):
-   - Extend `DataSourceApi<JaegerQuery, JaegerConfig>`.
-   - Add `"routes": [{"path": "api", "url": "%(url)s", "reqSignedIn": true}]` to `plugin.json` to enable the Grafana datasource proxy for CORS-free API calls from the QueryEditor.
-   - Implement `testDatasource()`: call `/api/services` via the proxy, verify a 200 response.
-
-2. **Sub-approach 2a — delegate search to Jaeger UI** (implement first, simpler):
-   - `query()` serializes the QueryEditor fields (service, operation, tags, lookback, limit) into a URL query string and returns a single-value DataFrame.
-   - Set `preferredVisualisationPluginId: 'jaegertracing-jaeger-panel'` on the frame so Explore automatically routes it to the Jaeger panel.
-   - The panel receives the query string, constructs `{baseUrl}/search?{queryString}&uiEmbed=v0`, renders the iframe.
-
-3. **QueryEditor** (`src/datasource/QueryEditor.tsx`):
-   - Service (Select, populated from `/api/services`), Operation (Select, populated from `/api/services/{service}/operations`), Tags, Lookback, Min/Max duration, Limit.
-   - On service change, re-fetch operations list.
-
-4. **ConfigEditor** (`src/datasource/ConfigEditor.tsx`):
-   - Jaeger Query URL (`DataSourceHttpSettings` from `@grafana/ui`).
-   - Direct vs. Proxy mode toggle (proxy mode implemented in Phase 5).
-
-5. **Variable support** (`src/datasource/VariableEditor.tsx`):
-   - Populate dashboard variables from `/api/services` or `/api/services/{service}/operations`.
-
-6. **Sub-approach 2b — thin datasource with native Grafana results table** (optional, can be deferred to Phase 4):
-   - `query()` calls `/api/traces?service=...` via the datasource proxy, returns a DataFrame table with columns `traceID`, `rootServiceName`, `rootOperationName`, `startTime`, `duration`, `spanCount`.
-   - Enables the Explore split-pane flow: log row with a `traceId` data link → `splitOpen()` → datasource returns trace ID row → panel renders the trace iframe.
-
-7. **CI workflow** (`ci-grafana-plugin.yml`):
-   - `npm ci && npm run build` (lint + build, no Jaeger needed).
-   - Start Grafana + Jaeger all-in-one + HotROD in Docker (reuse service definitions from `examples/grafana-integration/docker-compose.yaml`). Wait for health checks.
-   - Run Playwright tests:
-     - Datasource `testDatasource()`: provision datasource, click "Save & Test", assert success banner.
-     - QueryEditor: open Explore, select datasource, fill in Service = "frontend", assert the panel renders an `<iframe>` whose `src` contains `/search?service=frontend`.
-     - Service dropdown: assert the Service dropdown is populated with at least one entry from the live Jaeger API.
-     - Panel options: provision a dashboard, set `$traceId` from a real HotROD trace, assert the iframe `src` matches `{baseUrl}/trace/{traceId}?uiEmbed=v0`.
-   - Note: asserting content *inside* the iframe is not possible from Playwright due to cross-origin restrictions. Tests verify the URL is correctly constructed; rendering correctness relies on the manual validation from Phases 0–1.
-
-**Exit criterion:** Full search → detail flow works in Grafana Explore. CI passes. No Go code, no backend binary, no plugin signing required for development.
+**Exit criterion met:** Grafana Explore with the Jaeger datasource shows a search results table with trace IDs. Clicking a trace ID either opens it inline on the dashboard or in a second Explore pane. CI passes.
 
 ---
 
-#### Phase 4 — `uiLinkPatterns` (jaeger-ui repo, 3–5 days)
-
-**Goal:** Allow the Grafana plugin to inject span-to-Grafana link patterns at embed time without requiring Jaeger server reconfiguration.
-
-**Tasks:**
-1. Extend `EmbeddedState` (`types/embedded.ts`) with `linkPatterns?: LinkPatternsConfig[]`.
-2. Parse `uiLinkPatterns=<base64url-json>` in `embedded-url.ts`.
-3. In `model/link-patterns.ts`, merge embedded patterns with config-file patterns (embedded takes precedence).
-4. Add a "Span link patterns" section to the Grafana datasource `ConfigEditor`; base64-encode the patterns and append to every iframe URL.
-
-**Exit criterion:** A user can configure a span-to-Grafana-Explore link in the datasource config and see it appear on span attributes in the embedded trace view.
-
----
-
-#### Phase 5 — Go backend binary: proxy mode (3–4 weeks)
-
-**Goal:** Make the plugin work in deployments where Grafana and Jaeger are behind independent SSO ingress proxies on separate domains.
-
-**Tasks:**
-
-1. Add `Magefile.go` to `integrations/grafana-plugin/`. Add `mage build:linux/darwin/windows` targets producing `dist/gpx_jaeger_*`.
-2. Implement `pkg/plugin/main.go`: `datasource.Manage(...)` factory using `grafana-plugin-sdk-go`.
-3. Implement `pkg/plugin/proxy.go`: `CallResource` handler acting as a reverse proxy for the Jaeger UI SPA:
-   - Forwards requests from `/api/plugins/.../resources/ui/{path}` to Jaeger's internal address.
-   - Rewrites `Host` header, strips Grafana-specific headers.
-   - If bearer token propagation is configured (`--query.bearer-token-propagation` on Jaeger), extracts `Authorization` from `backend.CallResourceRequest.Headers` and injects it on outgoing requests. This header-injection pattern follows `datasource-context.go` in reference plugins such as grafana-trino.
-   - Handles base-path rewriting so Jaeger UI's own `fetch()` calls to `/api/traces` etc. are also proxied (or alternatively, configure Jaeger with `--query.base-path` matching the plugin resource path).
-4. Update `plugin.json`: `"backend": true`, `"executable": "gpx_jaeger"`.
-5. Update `JaegerPanel.tsx`: when proxy mode is active, construct iframe src as `/api/plugins/.../resources/ui/{path}?uiEmbed=v0` instead of the public Jaeger URL.
-6. Add `mage build:linux` to `ci-grafana-plugin.yml`.
-7. Submit to Grafana plugin catalog. Signed plugins with `"backend": true` require Grafana's security review; the binary must be signed before distribution.
-
-**Exit criterion:** Plugin works end-to-end behind independent SSO ingress proxies, with the iframe served from the Grafana origin.
-
----
-
-#### Phase 5 — Proxy Mode: Go Backend Binary (3–4 weeks)
+#### Phase 3 — Go backend binary: proxy mode (3–4 weeks)
 
 **Goal:** Make the plugin work in deployments where Grafana and Jaeger are behind independent SSO ingress proxies. The iframe is served from the Grafana origin; the Go binary proxies all requests to Jaeger's internal address.
+
+This is the highest-risk item in the roadmap: it requires validating that `CallResource` can correctly proxy a full SPA (with HTML rewriting, asset paths, and API calls) through the Grafana backend. It is deliberately placed before the jaeger-ui polish phases to surface this risk early.
 
 **Authentication context:**
 
@@ -489,11 +437,39 @@ Additionally, Jaeger supports `--query.bearer-token-propagation`: when enabled, 
 
 6. **Update `JaegerPanel`** (TypeScript): when proxy mode is active (read from datasource config), use `/api/plugins/.../resources/ui/{path}?uiEmbed=v0` as the iframe src.
 
-7. **CI**: add `mage build:linux` step to `ci-grafana-plugin.yml`.
+7. **CI**: add `mage build:linux` step to `ci.yml`.
 
 8. **Signing**: submit plugin to Grafana plugin catalog. Signed plugins require `"backend": true` plugins to pass Grafana's security review. The binary must be signed with Grafana's signing tool before distribution.
 
 **Exit criterion:** Plugin works end-to-end in a Grafana + Jaeger setup where both are behind independent SSO ingress proxies, with the iframe served from the Grafana origin.
+
+---
+
+#### Phase 4 — Jaeger UI `uiEmbed` improvements (jaeger-ui repo, 1–2 days)
+
+**Goal:** Address the UX gaps identified in Phase 0 so the embedded experience is clean.
+
+**Tasks:**
+1. Audit existing `uiEmbed` flags against the embedded UX observed in Phase 0.
+2. Add `uiTimelineHideViewSwitcher=1` to suppress the view-type toolbar (timeline/graph/flamegraph/statistics switcher) when only the timeline is needed.
+3. Add any other flags identified in Phase 0 (e.g., hiding the search bar in the trace detail header, fixing the diff graph resize on panel resize).
+4. Files: `packages/jaeger-ui/src/utils/embedded-url.ts`, `packages/jaeger-ui/src/types/embedded.ts`, `TracePageHeader/AltViewOptions.tsx`.
+
+**Exit criterion:** The embedded trace view has no extraneous chrome; the UX is comparable to a native panel.
+
+---
+
+#### Phase 5 — `uiLinkPatterns` (jaeger-ui repo, 3–5 days)
+
+**Goal:** Allow the Grafana plugin to inject span-to-Grafana link patterns at embed time without requiring Jaeger server reconfiguration.
+
+**Tasks:**
+1. Extend `EmbeddedState` (`types/embedded.ts`) with `linkPatterns?: LinkPatternsConfig[]`.
+2. Parse `uiLinkPatterns=<base64url-json>` in `embedded-url.ts`.
+3. In `model/link-patterns.ts`, merge embedded patterns with config-file patterns (embedded takes precedence).
+4. Add a "Span link patterns" section to the Grafana datasource `ConfigEditor`; base64-encode the patterns and append to every iframe URL.
+
+**Exit criterion:** A user can configure a span-to-Grafana-Explore link in the datasource config and see it appear on span attributes in the embedded trace view.
 
 ---
 
@@ -504,17 +480,18 @@ Additionally, Jaeger supports `--query.bearer-token-propagation`: when enabled, 
 | Manual PoC: iframe in Grafana panel          | ✅    |      |      |      |      |      |
 | Plugin scaffolding (jaeger repo)             |      | ✅    |      |      |      |      |
 | Panel plugin (iframe, trace + diff)          |      | ✅    |      |      |      |      |
-| `uiEmbed` flag additions (jaeger-ui)         |      |      | ✅    |      |      |      |
-| Datasource plugin + QueryEditor              |      |      |      | ✅    |      |      |
-| Sub-approach 2a (search delegated to iframe) |      |      |      | ✅    |      |      |
-| Variable support                             |      |      |      | ✅    |      |      |
-| CI workflow + Playwright tests               |      |      |      | ✅    |      |      |
-| Sub-approach 2b (thin datasource table)      |      |      |      | ⚠️    |      |      |
-| `uiLinkPatterns` URL param (jaeger-ui)       |      |      |      |      | ✅    |      |
-| Go binary + Magefile                         |      |      |      |      |      | ✅    |
-| `CallResource` SPA reverse proxy             |      |      |      |      |      | ✅    |
-| Bearer token forwarding                      |      |      |      |      |      | ✅    |
-| Grafana plugin catalog submission + signing  |      |      |      |      |      | ✅    |
+| Datasource plugin + QueryEditor              |      |      | ✅    |      |      |      |
+| `preferredVisualisationPluginId` on frames   |      |      | ✅    |      |      |      |
+| Panel DataFrame-driven rendering path        |      |      | ✅    |      |      |      |
+| Search results with trace-ID data links      |      |      | ✅    |      |      |      |
+| Variable support                             |      |      | ✅    |      |      |      |
+| CI workflow + Playwright tests               |      |      | ✅    |      |      |      |
+| Go binary + Magefile                         |      |      |      | ✅    |      |      |
+| `CallResource` SPA reverse proxy             |      |      |      | ✅    |      |      |
+| Bearer token forwarding                      |      |      |      | ✅    |      |      |
+| Grafana plugin catalog submission + signing  |      |      |      | ✅    |      |      |
+| `uiEmbed` flag additions (jaeger-ui)         |      |      |      |      | ✅    |      |
+| `uiLinkPatterns` URL param (jaeger-ui)       |      |      |      |      |      | ✅    |
 
 ---
 

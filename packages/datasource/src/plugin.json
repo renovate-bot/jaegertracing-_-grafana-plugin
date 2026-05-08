@@ -18,6 +18,8 @@
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
+  "metrics": true,
+  "tracing": true,
   "dependencies": {
     "grafanaDependency": ">=12.3.0",
     "plugins": []

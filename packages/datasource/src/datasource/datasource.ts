@@ -1,12 +1,14 @@
 import {
+  DataLink,
   DataQueryRequest,
   DataQueryResponse,
   DataSourceApi,
   DataSourceInstanceSettings,
   FieldType,
   MutableDataFrame,
+  TimeRange,
 } from '@grafana/data';
-import { getBackendSrv, isFetchError } from '@grafana/runtime';
+import { getBackendSrv, getTemplateSrv, isFetchError } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import { JaegerDataSourceOptions, JaegerQuery } from '../types';
 
@@ -23,34 +25,41 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
     const results = await Promise.all(
       request.targets
         .filter((target) => !target.hide)
-        .map((target) => this.runQuery(target))
+        .map((target) => this.runQuery(target, request.range))
     );
     return { data: results.flat() };
   }
 
-  private async runQuery(query: JaegerQuery): Promise<MutableDataFrame[]> {
-    if (query.queryType === 'trace') {
-      return query.traceId ? this.fetchTrace(query.traceId) : [];
+  private async runQuery(query: JaegerQuery, range: TimeRange): Promise<MutableDataFrame[]> {
+    const interpolated: JaegerQuery = {
+      ...query,
+      traceId: query.traceId ? getTemplateSrv().replace(query.traceId) : query.traceId,
+      service: query.service ? getTemplateSrv().replace(query.service) : query.service,
+      operation: query.operation ? getTemplateSrv().replace(query.operation) : query.operation,
+      tags: query.tags ? getTemplateSrv().replace(query.tags) : query.tags,
+    };
+    if (interpolated.queryType === 'trace') {
+      return Promise.resolve(interpolated.traceId ? this.fetchTrace(interpolated.traceId) : []);
     }
-    return query.service ? this.fetchTraces(query) : [];
+    return interpolated.service ? this.fetchTraces(interpolated, range) : [];
   }
 
-  private async fetchTrace(traceId: string): Promise<MutableDataFrame[]> {
-    await lastValueFrom(
-      getBackendSrv().fetch<{ data: unknown[] }>({
-        url: `${this.proxyUrl}/api/traces/${encodeURIComponent(traceId)}`,
-      })
-    );
+  private fetchTrace(traceId: string): MutableDataFrame[] {
+    // No API call needed: the panel renders the trace via iframe, which fetches it directly.
     const frame = new MutableDataFrame({
       name: traceId,
+      meta: { preferredVisualisationPluginId: 'jaegertracing-jaeger-panel' },
       fields: [{ name: 'traceID', type: FieldType.string }],
     });
     frame.add({ traceID: traceId });
     return [frame];
   }
 
-  private async fetchTraces(query: JaegerQuery): Promise<MutableDataFrame[]> {
+  private async fetchTraces(query: JaegerQuery, range: TimeRange): Promise<MutableDataFrame[]> {
     const params = new URLSearchParams({ service: query.service ?? '' });
+    // Jaeger expects start/end in microseconds
+    params.set('start', String(range.from.valueOf() * 1000));
+    params.set('end', String(range.to.valueOf() * 1000));
     if (query.operation) {
       params.set('operation', query.operation);
     }
@@ -73,24 +82,58 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
       }
     }
 
+    interface JaegerSpan {
+      spanID: string;
+      operationName: string;
+      duration: number;
+      startTime: number;
+      processID: string;
+      references: Array<{ refType: string }>;
+    }
+    interface JaegerTrace {
+      traceID: string;
+      spans: JaegerSpan[];
+      processes: Record<string, { serviceName: string }>;
+    }
+
     const response = await lastValueFrom(
-      getBackendSrv().fetch<{ data: Array<{ traceID: string; spans: unknown[] }> }>({
+      getBackendSrv().fetch<{ data: JaegerTrace[] }>({
         url: `${this.proxyUrl}/api/traces?${params}`,
       })
     );
 
+    const traceLink: DataLink = {
+      title: 'Open in Explore',
+      url: '',
+      internal: {
+        datasourceUid: this.uid,
+        datasourceName: this.name,
+        query: { queryType: 'trace', traceId: '${__value.raw}' },
+      },
+    };
+
     const frame = new MutableDataFrame({
       name: 'traces',
       fields: [
-        { name: 'traceID', type: FieldType.string },
+        { name: 'traceID', type: FieldType.string, config: { links: [traceLink] } },
+        { name: 'traceName', type: FieldType.string },
         { name: 'spanCount', type: FieldType.number },
+        { name: 'duration', type: FieldType.number, config: { unit: 'µs' } },
       ],
     });
 
     for (const trace of response.data.data ?? []) {
+      const spans: JaegerSpan[] = Array.isArray(trace.spans) ? trace.spans : [];
+      // Root span: the one with no parent reference
+      const rootSpan = spans.find((s) => !s.references?.some((r) => r.refType === 'CHILD_OF'))
+        ?? spans.reduce((a, b) => (a.startTime < b.startTime ? a : b), spans[0]);
+      const service = rootSpan ? (trace.processes[rootSpan.processID]?.serviceName ?? '') : '';
+      const operation = rootSpan?.operationName ?? '';
       frame.add({
         traceID: trace.traceID,
-        spanCount: Array.isArray(trace.spans) ? trace.spans.length : 0,
+        traceName: service && operation ? `${service}: ${operation}` : operation,
+        spanCount: spans.length,
+        duration: rootSpan?.duration ?? 0,
       });
     }
 

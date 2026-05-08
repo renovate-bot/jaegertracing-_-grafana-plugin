@@ -22,12 +22,15 @@ export function QueryEditor({ datasource, query, onChange, onRunQuery }: Props) 
   }, [datasource]);
 
   useEffect(() => {
-    if (query.service) {
-      datasource.getOperations(query.service).then(setOperations).catch(() => setOperations([]));
+    // Skip fetch if service is empty, a template variable, or not yet in the discovered list
+    // (allowCustomValue lets users type variables like ${service} which are not real service names)
+    const isLiteralService = query.service && services.includes(query.service);
+    if (isLiteralService) {
+      datasource.getOperations(query.service!).then(setOperations).catch(() => setOperations([]));
     } else {
       Promise.resolve([]).then(setOperations);
     }
-  }, [datasource, query.service]);
+  }, [datasource, query.service, services]);
 
   const handleQueryTypeChange = useCallback(
     (value: 'search' | 'trace') => {
@@ -67,12 +70,14 @@ export function QueryEditor({ datasource, query, onChange, onRunQuery }: Props) 
           <InlineFieldRow>
             <InlineField label="Service" labelWidth={14}>
               <Select
-                value={services.find((s) => s === query.service) ? { label: query.service, value: query.service } : null}
+                value={query.service ? { label: query.service, value: query.service } : null}
                 options={services.map((s) => ({ label: s, value: s }))}
                 width={32}
-                onChange={(v) => onChange({ ...query, service: v?.value ?? undefined })}
+                onChange={(v) => { onChange({ ...query, service: v?.value ?? undefined }); }}
+                onCreateOption={(v) => { onChange({ ...query, service: v }); }}
                 isClearable
-                placeholder="Select service"
+                allowCustomValue
+                placeholder="Select service or enter variable"
               />
             </InlineField>
             <InlineField label="Operation" labelWidth={14}>
