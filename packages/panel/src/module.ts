@@ -1,9 +1,26 @@
+import React from 'react';
 import { PanelPlugin } from '@grafana/data';
+import { DataSourcePicker } from '@grafana/runtime';
 import { JaegerPanelOptions } from './types';
 import { JaegerPanel } from './components/JaegerPanel';
 
 export const plugin = new PanelPlugin<JaegerPanelOptions>(JaegerPanel).setPanelOptions((builder) => {
   return builder
+    .addCustomEditor({
+      id: 'datasourceUid',
+      path: 'datasourceUid',
+      name: 'Jaeger datasource',
+      description: 'Select the Jaeger datasource. Used to resolve proxy mode and base URL automatically. Leave unset to use the Jaeger UI base URL below.',
+      editor: ({ value, onChange }) =>
+        React.createElement(DataSourcePicker, {
+          pluginId: 'jaegertracing-jaeger-datasource',
+          current: value ?? null,
+          noDefault: true,
+          placeholder: 'Select datasource (optional)',
+          onChange: (ds) => onChange(ds.uid),
+          onClear: () => onChange(undefined),
+        }),
+    })
     .addRadio({
       path: 'mode',
       name: 'Mode',
@@ -15,12 +32,6 @@ export const plugin = new PanelPlugin<JaegerPanelOptions>(JaegerPanel).setPanelO
           { value: 'search', label: 'Search' },
         ],
       },
-    })
-    .addTextInput({
-      path: 'jaegerBaseUrl',
-      name: 'Jaeger UI base URL',
-      description: 'Base URL of the Jaeger Query service, e.g. http://localhost:16686',
-      defaultValue: 'http://localhost:16686',
     })
     .addTextInput({
       path: 'traceId',

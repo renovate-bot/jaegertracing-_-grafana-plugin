@@ -18,6 +18,8 @@
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
+  "backend": true,
+  "executable": "gpx_jaeger",
   "metrics": true,
   "tracing": true,
   "dependencies": {

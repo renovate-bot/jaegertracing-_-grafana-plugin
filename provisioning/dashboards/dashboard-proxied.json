@@ -11,7 +11,7 @@
     {
       "datasource": {
         "type": "jaegertracing-jaeger-datasource",
-        "uid": "jaeger"
+        "uid": "jaeger-proxied"
       },
       "fieldConfig": {
         "defaults": {
@@ -32,7 +32,7 @@
                 "value": [
                   {
                     "title": "Open in dashboard",
-                    "url": "/d/jaeger-panel-phase1?var-traceId=${__value.raw}&${__url_time_range}",
+                    "url": "/d/jaeger-panel-proxied?var-traceId=${__value.raw}&${__url_time_range}",
                     "targetBlank": false
                   }
                 ]
@@ -58,7 +58,7 @@
         {
           "datasource": {
             "type": "jaegertracing-jaeger-datasource",
-            "uid": "jaeger"
+            "uid": "jaeger-proxied"
           },
           "queryType": "search",
           "service": "${service}",
@@ -72,7 +72,7 @@
     {
       "datasource": {
         "type": "jaegertracing-jaeger-datasource",
-        "uid": "jaeger"
+        "uid": "jaeger-proxied"
       },
       "fieldConfig": {
         "defaults": {},
@@ -93,7 +93,7 @@
         "hideTimelineMinimap": false,
         "hideTimelineSummary": false,
         "collapseTraceHeader": false,
-        "datasourceUid": "jaeger"
+        "datasourceUid": "jaeger-proxied"
       },
       "targets": [],
       "title": "Trace detail",
@@ -140,8 +140,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Jaeger Traces",
-  "uid": "jaeger-panel-phase1",
+  "title": "Jaeger Traces (proxied)",
+  "uid": "jaeger-panel-proxied",
   "version": 1,
   "weekStart": ""
 }

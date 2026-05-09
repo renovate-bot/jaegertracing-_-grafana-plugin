@@ -1,7 +1,13 @@
-.PHONY: build test lint server panel-% datasource-%
+.PHONY: build build-backend vet-backend test lint server panel-% datasource-%
 
-build:
+build: build-backend
 	npm run build
+
+build-backend:
+	(cd packages/datasource && go tool mage build:linuxARM64 build:linux)
+
+vet-backend:
+	(cd packages/datasource && go vet ./pkg/...)
 
 test:
 	npm run test:ci
