@@ -1,4 +1,4 @@
-.PHONY: build test lint server test-reverse-proxy panel-% datasource-%
+.PHONY: build test lint server build-release test-reverse-proxy panel-% datasource-%
 
 build:
 	npm run build
@@ -22,6 +22,27 @@ test-reverse-proxy:
 	  status=$$?; \
 	  docker compose -f examples/reverse-proxy/docker-compose.yaml down; \
 	  exit $$status
+
+# Usage: make build-release VERSION=0.2.0
+# Builds both plugins, packages them as zips, and generates dist/checksums.txt.
+# package.json files are temporarily updated then restored; working tree is clean after.
+build-release:
+ifndef VERSION
+	$(error VERSION is not set. Usage: make build-release VERSION=0.2.0)
+endif
+	npm pkg set version="$(VERSION)" \
+		--workspace packages/panel \
+		--workspace packages/datasource
+	$(MAKE) build
+	git checkout packages/panel/package.json packages/datasource/package.json
+	rm -rf dist
+	mkdir -p dist
+	mv packages/panel/dist dist/jaegertracing-jaeger-panel
+	mv packages/datasource/dist dist/jaegertracing-jaeger-datasource
+	(cd dist && zip -r jaegertracing-jaeger-panel-$(VERSION).zip jaegertracing-jaeger-panel)
+	(cd dist && zip -r jaegertracing-jaeger-datasource-$(VERSION).zip jaegertracing-jaeger-datasource)
+	(cd dist && sha256sum jaegertracing-jaeger-panel-$(VERSION).zip jaegertracing-jaeger-datasource-$(VERSION).zip > checksums.txt)
+	(cd dist && sha256sum -c checksums.txt)
 
 panel-%:
 	npm run $* --workspace=packages/panel

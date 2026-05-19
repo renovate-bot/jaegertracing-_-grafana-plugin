@@ -1,11 +1,8 @@
-# This GitHub Action automates the process of building Grafana plugins.
-# (For more information, see https://github.com/grafana/plugin-actions/blob/main/build-plugin/README.md)
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*' # Run workflow on version tags, e.g. v1.0.0.
+  release:
+    types: [published]
 
 permissions: read-all
 
@@ -19,11 +16,44 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
-        # Uncomment to enable plugin signing
-        # (For more info on how to generate the access policy token see https://grafana.com/developers/plugin-tools/publish-a-plugin/sign-a-plugin#generate-an-access-policy-token)
-        #with:
-        # Make sure to save the token in your repository secrets
-        #policy_token: $
-        # Usage of GRAFANA_API_KEY is deprecated, prefer `policy_token` option above
-        #grafana_token: $
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag '${TAG}' does not match expected format v<major>.<minor>.<patch>"
+            exit 1
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and package plugins
+        run: make build-release VERSION="${{ steps.version.outputs.version }}"
+
+      - name: Validate panel plugin
+        run: |
+          docker run --rm \
+            -v "$PWD/dist/jaegertracing-jaeger-panel-${{ steps.version.outputs.version }}.zip:/archive.zip" \
+            grafana/plugin-validator-cli -analyzer=metadatavalid /archive.zip
+
+      - name: Validate datasource plugin
+        run: |
+          docker run --rm \
+            -v "$PWD/dist/jaegertracing-jaeger-datasource-${{ steps.version.outputs.version }}.zip:/archive.zip" \
+            grafana/plugin-validator-cli -analyzer=metadatavalid /archive.zip
+
+      - name: Upload release assets
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          gh release upload "${{ github.ref_name }}" \
+            "dist/jaegertracing-jaeger-panel-${VERSION}.zip" \
+            "dist/jaegertracing-jaeger-datasource-${VERSION}.zip" \
+            dist/checksums.txt --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

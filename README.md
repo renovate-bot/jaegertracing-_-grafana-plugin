@@ -12,6 +12,25 @@ The plugin renders an iframe pointing at a Jaeger Query service. Three modes are
 | **Trace diff** | Side-by-side comparison of two traces |
 | **Search** | Embeds Jaeger's search page for querying traces by service, operation, and tags |
 
+## Installation
+
+Download `jaegertracing-jaeger-panel-<version>.zip`, `jaegertracing-jaeger-datasource-<version>.zip`, and `checksums.txt` from the [Releases](https://github.com/jaegertracing/grafana-plugin/releases) page into the same directory, then verify:
+
+```bash
+sha256sum -c checksums.txt
+# jaegertracing-jaeger-panel-<version>.zip: OK
+# jaegertracing-jaeger-datasource-<version>.zip: OK
+```
+
+Unzip both archives into your Grafana plugins directory, then add to `grafana.ini`:
+
+```ini
+[plugins]
+allow_loading_unsigned_plugins = jaegertracing-jaeger-panel,jaegertracing-jaeger-datasource
+```
+
+Restart Grafana.
+
 ## Prerequisites
 
 - A running Jaeger Query service reachable from the user's browser (the iframe loads Jaeger UI directly).

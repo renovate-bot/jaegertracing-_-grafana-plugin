@@ -13,7 +13,10 @@
       "small": "img/logo.svg",
       "large": "img/logo.svg"
     },
-    "links": [],
+    "links": [
+      { "name": "Source", "url": "https://github.com/jaegertracing/grafana-plugin" },
+      { "name": "Docs", "url": "https://github.com/jaegertracing/grafana-plugin/blob/main/README.md" }
+    ],
     "screenshots": [],
     "version": "%VERSION%",
     "updated": "%TODAY%"
