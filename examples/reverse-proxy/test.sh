@@ -91,47 +91,17 @@ assert_assets_load() {
     fi
 }
 
-# Grafana DataProxy: GET /api/datasources/proxy/uid/<uid>/api/services
-# Grafana proxies this to the datasource URL + /api/services.
-# The datasource URL points at httpd (the reverse proxy), so this exercises
-# the full chain: test → Grafana DataProxy → httpd → Jaeger.
-assert_grafana_dataproxy() {
-    local label="$1" uid="$2"
-    local url="$GRAFANA_URL/api/datasources/proxy/uid/$uid/api/services"
-    local result
-    result=$(curl -s "$url" | jq -r '.data | length' 2>/dev/null || echo "")
-    if [[ -n "$result" && "$result" != "null" && "$result" != "0" ]]; then
-        pass "$label — DataProxy /api/services returned $result services"
-    else
-        fail "$label — DataProxy /api/services empty/null ($url)"
-    fi
-}
-
-# Grafana datasource health check endpoint.
-# Returns {"status":"OK"} when CheckHealth/testDatasource passes.
-assert_grafana_health() {
-    local label="$1" uid="$2"
-    local url="$GRAFANA_URL/api/datasources/uid/$uid/health"
-    local status
-    status=$(curl -s "$url" | jq -r '.status' 2>/dev/null || echo "")
-    if [[ "$status" == "OK" ]]; then
-        pass "$label — health check status=OK"
-    else
-        fail "$label — health check status=$status ($url)"
-    fi
-}
-
-# Verify jaegerPublicURL in datasource settings matches the expected proxy URL.
-# This is the URL the panel uses as the iframe src base.
-assert_jaeger_public_url() {
+# Verify the datasource url field matches the expected proxy URL.
+# This is the URL the panel uses as the iframe src base and for all API calls.
+assert_datasource_url() {
     local label="$1" uid="$2" expected="$3"
-    local url="$GRAFANA_URL/api/datasources/uid/$uid"
+    local api_url="$GRAFANA_URL/api/datasources/uid/$uid"
     local actual
-    actual=$(curl -s "$url" | jq -r '.jsonData.jaegerPublicURL' 2>/dev/null || echo "")
+    actual=$(curl -s "$api_url" | jq -r '.url' 2>/dev/null || echo "")
     if [[ "$actual" == "$expected" ]]; then
-        pass "$label — jaegerPublicURL=$actual"
+        pass "$label — url=$actual"
     else
-        fail "$label — jaegerPublicURL: expected $expected, got $actual ($url)"
+        fail "$label — url: expected $expected, got $actual ($api_url)"
     fi
 }
 
@@ -163,42 +133,35 @@ echo "Waiting 5s for HotROD to generate traces..."
 sleep 5
 
 echo ""
-echo "--- Proxy layer: Option 1 (transparent proxy + --query.base-path) ---"
+echo "--- Proxy layer: Option 1 (transparent proxy + base_path configured) ---"
 
-assert_http_200     "Option1 index.html"       "$OPTION1_URL/"
-assert_body_contains "Option1 base href marker" "$OPTION1_URL/" \
+assert_http_200      "Option1 index.html"          "$OPTION1_URL/"
+# Since Jaeger 2.18.0 the UI auto-detects the base path via inline script (ADR-009).
+# The backend no longer writes a static <base href="/prefix/"> — assert the marker.
+assert_body_contains "Option1 inline script marker" "$OPTION1_URL/" \
     "data-inject-target=\"BASE_URL\""
-assert_body_contains "Option1 base href value"  "$OPTION1_URL/" \
-    "href=\"$PREFIX"
-assert_http_200     "Option1 /api/services"    "$OPTION1_URL/api/services"
-assert_json_field   "Option1 services non-empty" "$OPTION1_URL/api/services" \
+assert_http_200      "Option1 /api/services"       "$OPTION1_URL/api/services"
+assert_json_field    "Option1 services non-empty"  "$OPTION1_URL/api/services" \
     '.data | length'
-assert_assets_load  "Option1 assets"            "$OPTION1_URL"
+assert_assets_load   "Option1 assets"              "$OPTION1_URL"
 
 echo ""
-echo "--- Proxy layer: Option 2 (prefix stripping + <base href> rewriting) ---"
+echo "--- Proxy layer: Option 2 (prefix stripping, auto base-path detection) ---"
 
-assert_http_200      "Option2 index.html"        "$OPTION2_URL/"
-assert_body_contains "Option2 base href rewritten" "$OPTION2_URL/" \
-    "href=\"$PREFIX"
-assert_http_200      "Option2 /api/services"     "$OPTION2_URL/api/services"
-assert_json_field    "Option2 services non-empty" "$OPTION2_URL/api/services" \
+assert_http_200      "Option2 index.html"           "$OPTION2_URL/"
+# No Substitute rewriting needed since 2.18.0 — just check the script marker is present.
+assert_body_contains "Option2 inline script marker" "$OPTION2_URL/" \
+    "data-inject-target=\"BASE_URL\""
+assert_http_200      "Option2 /api/services"        "$OPTION2_URL/api/services"
+assert_json_field    "Option2 services non-empty"   "$OPTION2_URL/api/services" \
     '.data | length'
-assert_assets_load   "Option2 assets"             "$OPTION2_URL"
+assert_assets_load   "Option2 assets"               "$OPTION2_URL"
 
 echo ""
-echo "--- Grafana integration: Option 1 datasource ---"
+echo "--- Grafana integration: datasource provisioning ---"
 
-assert_grafana_dataproxy "Option1 DataProxy"    "jaeger-option1"
-assert_grafana_health    "Option1 health check" "jaeger-option1"
-assert_jaeger_public_url "Option1 public URL"   "jaeger-option1" "http://localhost:18080/jaeger/ui"
-
-echo ""
-echo "--- Grafana integration: Option 2 datasource ---"
-
-assert_grafana_dataproxy "Option2 DataProxy"    "jaeger-option2"
-assert_grafana_health    "Option2 health check" "jaeger-option2"
-assert_jaeger_public_url "Option2 public URL"   "jaeger-option2" "http://localhost:18081/jaeger/ui"
+assert_datasource_url "Option1 datasource URL" "jaeger-option1" "http://localhost:18080/jaeger/ui"
+assert_datasource_url "Option2 datasource URL" "jaeger-option2" "http://localhost:18081/jaeger/ui"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="

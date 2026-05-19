@@ -1,4 +1,4 @@
-import { DataQuery, DataSourceJsonData } from '@grafana/data';
+import { DataQuery } from '@grafana/schema';
 
 export interface JaegerQuery extends DataQuery {
   traceId?: string;
@@ -9,15 +9,6 @@ export interface JaegerQuery extends DataQuery {
   maxDuration?: string;
   limit?: number;
   queryType?: 'trace' | 'search';
-}
-
-export interface JaegerDataSourceOptions extends DataSourceJsonData {
-  // proxyMode routes iframe and API calls through the Grafana backend Go proxy.
-  proxyMode?: boolean;
-  // jaegerPublicURL is the browser-accessible Jaeger URL used in direct mode (proxyMode=false).
-  jaegerPublicURL?: string;
-  // jaegerInternalURL is the Grafana-server-accessible Jaeger URL used in proxy mode.
-  jaegerInternalURL?: string;
 }
 
 export const DEFAULT_QUERY: Partial<JaegerQuery> = {

@@ -6,6 +6,7 @@ const pluginE2eAuth = `${dirname(require.resolve('@grafana/plugin-e2e'))}/auth`;
 
 export default defineConfig<PluginOptions>({
   testDir: './tests',
+  testIgnore: ['**/reverse-proxy.spec.ts'],
   outputDir: './playwright/.test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,

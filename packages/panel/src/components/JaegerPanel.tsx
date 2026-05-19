@@ -20,19 +20,16 @@ function traceEmbedParams(options: JaegerPanelOptions): URLSearchParams {
 }
 
 // Resolve the iframe base URL from the Jaeger datasource instance settings.
-// Returns the CallResource proxy path in proxy mode, or jaegerPublicURL in direct mode.
 // Returns null if the datasource is not configured or the URL is missing/invalid.
 function resolveBaseFromDatasource(uid: string | undefined): string | null {
   if (!uid) {
     return null;
   }
-  const jsonData = getDataSourceSrv().getInstanceSettings(uid)?.jsonData as any;
-  if (!jsonData) {
+  const settings = getDataSourceSrv().getInstanceSettings(uid);
+  if (!settings) {
     return null;
   }
-  // Always use jaegerPublicURL for iframe src — CallResource cannot serve SPA due to CSP sandbox.
-  // Proxy mode only affects the datasource's API calls, not the panel iframe.
-  const publicUrl = (jsonData.jaegerPublicURL ?? '').trim().replace(/\/$/, '');
+  const publicUrl = (settings.url ?? '').trim().replace(/\/$/, '');
   try {
     const parsed = new URL(publicUrl);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
@@ -106,7 +103,7 @@ function traceIdFromData(data: Props['data']): string | null {
   for (const frame of data.series) {
     const field = frame.fields.find((f) => f.name === 'traceID' && f.type === FieldType.string);
     if (field && frame.length === 1) {
-      const value = field.values.get ? field.values.get(0) : (field.values as unknown as string[])[0];
+      const value = (field.values as unknown as string[])[0];
       if (typeof value === 'string' && value) {
         return value;
       }

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { QueryEditorProps } from '@grafana/data';
+import { DataSourceJsonData, QueryEditorProps } from '@grafana/data';
 import { InlineField, InlineFieldRow, Input, RadioButtonGroup, Select } from '@grafana/ui';
 import { JaegerDataSource } from '../datasource/datasource';
-import { JaegerDataSourceOptions, JaegerQuery } from '../types';
+import { JaegerQuery } from '../types';
 
-type Props = QueryEditorProps<JaegerDataSource, JaegerQuery, JaegerDataSourceOptions>;
+type Props = QueryEditorProps<JaegerDataSource, JaegerQuery, DataSourceJsonData>;
 
 const queryTypeOptions = [
   { label: 'Search', value: 'search' as const },

@@ -10,6 +10,10 @@ on:
       - master
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-panel:
     name: Build, lint and unit tests (panel)
@@ -30,9 +34,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Node.js environment
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'npm'
           cache-dependency-path: 'package-lock.json'
 
@@ -111,9 +115,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Node.js environment
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'npm'
           cache-dependency-path: 'package-lock.json'
 
@@ -129,6 +133,63 @@ jobs:
         run: npm run test:ci
       - name: Build frontend
         run: npm run build
+
+  reverse-proxy-tests:
+    name: Reverse-proxy e2e tests
+    runs-on: ubuntu-latest
+    needs: [build-panel, build-datasource]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js environment
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: 'package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build plugins
+        run: npm run build
+
+      - name: Start reverse-proxy stack
+        run: docker compose -f examples/reverse-proxy/docker-compose.yaml up -d
+
+      - name: Run curl/jq tests
+        run: examples/reverse-proxy/test.sh
+
+      - name: Install Playwright browsers
+        run: npm exec playwright install chromium --with-deps
+
+      - name: Run Playwright tests
+        id: run-tests
+        run: |
+          GRAFANA_URL=http://localhost:18082 npx playwright test \
+            --config playwright/reverse-proxy.config.ts
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: ${{ always() && !cancelled() }}
+        with:
+          name: reverse-proxy-playwright-report
+          path: playwright/.report-reverse-proxy
+          retention-days: 5
+
+      - name: Docker logs
+        if: ${{ failure() }}
+        run: |
+          docker compose -f examples/reverse-proxy/docker-compose.yaml logs
+
+      - name: Stop reverse-proxy stack
+        if: ${{ always() }}
+        run: docker compose -f examples/reverse-proxy/docker-compose.yaml down
 
   resolve-versions:
     name: Resolve e2e images
@@ -177,9 +238,9 @@ jobs:
           name: ${{ needs.build-panel.outputs.plugin-id }}-${{ needs.build-panel.outputs.plugin-version }}
 
       - name: Setup Node.js environment
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'npm'
           cache-dependency-path: 'package-lock.json'
 
@@ -230,7 +291,7 @@ jobs:
       contents: write
       id-token: write
       pull-requests: write
-    needs: [playwright-tests]
+    needs: [playwright-tests, reverse-proxy-tests]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

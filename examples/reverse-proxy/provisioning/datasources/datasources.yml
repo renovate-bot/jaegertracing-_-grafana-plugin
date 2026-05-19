@@ -1,23 +1,15 @@
 apiVersion: 1
 
 datasources:
-  # Option 1: transparent proxy, Jaeger served under /jaeger/ui with --query.base-path
+  # Option 1: transparent proxy, Jaeger served under /jaeger/ui with base_path configured
   - name: Jaeger-Option1
     uid: jaeger-option1
     type: jaegertracing-jaeger-datasource
-    access: proxy
-    url: http://httpd1/jaeger/ui
+    url: http://localhost:18080/jaeger/ui
     isDefault: true
-    jsonData:
-      proxyMode: false
-      jaegerPublicURL: http://localhost:18080/jaeger/ui
 
-  # Option 2: prefix-stripping proxy with <base href> rewriting
+  # Option 2: prefix-stripping proxy, base path auto-detected by Jaeger UI (since 2.18.0)
   - name: Jaeger-Option2
     uid: jaeger-option2
     type: jaegertracing-jaeger-datasource
-    access: proxy
-    url: http://httpd2/jaeger/ui
-    jsonData:
-      proxyMode: false
-      jaegerPublicURL: http://localhost:18081/jaeger/ui
+    url: http://localhost:18081/jaeger/ui

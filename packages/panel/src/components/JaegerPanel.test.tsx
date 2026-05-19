@@ -44,7 +44,7 @@ const dsUid = 'test-uid-123';
 
 beforeEach(() => {
   mockGetDataSourceSrv.mockReturnValue({
-    getInstanceSettings: jest.fn().mockReturnValue({ jsonData: { proxyMode: false, jaegerPublicURL: 'http://jaeger:16686' } }),
+    getInstanceSettings: jest.fn().mockReturnValue({ url: 'http://jaeger:16686' }),
   });
 });
 
@@ -100,9 +100,9 @@ describe('JaegerPanel — base URL from datasource', () => {
     request: { targets: [{ datasource: { uid: dsUid } }] } as any,
   };
 
-  it('uses jaegerPublicURL when datasource has proxyMode=true', () => {
+  it('uses datasource url for iframe src', () => {
     mockGetDataSourceSrv.mockReturnValue({
-      getInstanceSettings: jest.fn().mockReturnValue({ jsonData: { proxyMode: true, jaegerPublicURL: 'http://proxy:18080/jaeger/ui' } }),
+      getInstanceSettings: jest.fn().mockReturnValue({ url: 'http://proxy:18080/jaeger/ui' }),
     });
 
     const opts = { ...baseOptions, traceId: 'abc' };
@@ -111,21 +111,6 @@ describe('JaegerPanel — base URL from datasource', () => {
     const iframe = screen.getByTestId('jaeger-panel-iframe') as HTMLIFrameElement;
     expect(iframe.src).toContain('http://proxy:18080/jaeger/ui');
     expect(iframe.src).toContain('/trace/abc');
-    expect(iframe.src).not.toContain('/api/datasources');
-  });
-
-  it('uses jaegerPublicURL when datasource has proxyMode=false', () => {
-    mockGetDataSourceSrv.mockReturnValue({
-      getInstanceSettings: jest.fn().mockReturnValue({ jsonData: { proxyMode: false, jaegerPublicURL: 'http://jaeger:16686' } }),
-    });
-
-    const opts = { ...baseOptions, traceId: 'def' };
-    render(<JaegerPanel {...baseProps} options={opts} data={dataWithTarget} />);
-
-    const iframe = screen.getByTestId('jaeger-panel-iframe') as HTMLIFrameElement;
-    expect(iframe.src).toContain('http://jaeger:16686');
-    expect(iframe.src).toContain('/trace/def');
-    expect(iframe.src).not.toContain('/api/datasources');
   });
 
   it('shows hint when getInstanceSettings returns undefined', () => {
@@ -139,9 +124,9 @@ describe('JaegerPanel — base URL from datasource', () => {
     expect(screen.getByTestId('jaeger-panel-hint')).toBeInTheDocument();
   });
 
-  it('uses jaegerPublicURL when uid comes from panel options (no data.request)', () => {
+  it('uses datasource url when uid comes from panel options (no data.request)', () => {
     mockGetDataSourceSrv.mockReturnValue({
-      getInstanceSettings: jest.fn().mockReturnValue({ jsonData: { proxyMode: true, jaegerPublicURL: 'http://proxy:18080/jaeger/ui' } }),
+      getInstanceSettings: jest.fn().mockReturnValue({ url: 'http://proxy:18080/jaeger/ui' }),
     });
 
     const opts = { ...baseOptions, traceId: 'jkl', datasourceUid: dsUid };
@@ -150,7 +135,6 @@ describe('JaegerPanel — base URL from datasource', () => {
     const iframe = screen.getByTestId('jaeger-panel-iframe') as HTMLIFrameElement;
     expect(iframe.src).toContain('http://proxy:18080/jaeger/ui');
     expect(iframe.src).toContain('/trace/jkl');
-    expect(iframe.src).not.toContain('/api/datasources');
   });
 
   it('shows "Select a Jaeger datasource" hint when no datasource is configured', () => {

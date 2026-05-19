@@ -17,12 +17,19 @@ The plugin renders an iframe pointing at a Jaeger Query service. Three modes are
 - A running Jaeger Query service reachable from the user's browser (the iframe loads Jaeger UI directly).
 - Grafana 12.3.0 or later.
 
+## Datasource configuration
+
+Install the **Jaeger datasource** plugin and add a datasource for each Jaeger instance:
+
+1. Go to **Connections → Data sources → Add new data source** and choose **Jaeger**.
+2. Set **URL** to the browser-accessible address of Jaeger (e.g. `http://localhost:16686`). This is used both as the iframe source and for all API calls (health checks, fetching services/traces). In a reverse-proxy deployment this is the proxy address including any path prefix.
+
 ## Panel options
 
 | Option | Description |
 |--------|-------------|
+| **Jaeger datasource** | Select the Jaeger datasource. The panel reads its **URL** field to build the iframe src. |
 | **Mode** | `Single trace`, `Trace diff`, or `Search` |
-| **Jaeger UI base URL** | URL of the Jaeger Query service, e.g. `http://jaeger:16686` |
 | **Trace ID** | Trace ID to display. Supports dashboard variables: `${traceId}` |
 | **Trace ID (B)** | Second trace ID for diff mode. Supports dashboard variables |
 | **Service** | Pre-selects a service in search mode. Supports dashboard variables |
@@ -38,64 +45,9 @@ Use Grafana dashboard variables to drive the trace ID from a URL parameter or fr
 2. Set the panel's **Trace ID** option to `${traceId}`.
 3. The panel updates whenever the variable changes.
 
-## Development
-
-### Requirements
-
-- Node.js >= 22
-- Docker (for running the local Grafana + Jaeger stack)
-
-### Build and run
-
-```bash
-# Build the plugin
-make build
-
-# Start Grafana (loads the built plugin from dist/)
-make server
-
-# Watch mode for development
-make dev
-```
-
-`make server` starts Grafana only. Run Jaeger and HotROD separately:
-
-```bash
-cd /path/to/jaeger/examples/hotrod
-docker compose up
-```
-
-| Service | URL |
-|---------|-----|
-| Grafana | http://localhost:3000 (admin / admin) |
-| Jaeger UI | http://localhost:16686 (separate stack) |
-| HotROD demo | http://localhost:8080 (separate stack) |
-
-### Run e2e tests
-
-```bash
-# Terminal 1: start the stack (builds the plugin automatically)
-make server
-
-# Terminal 2: run Playwright tests
-make e2e
-```
-
-### Run unit tests
-
-```bash
-make test
-```
-
-### Lint
-
-```bash
-make lint
-```
-
 ## Architecture
 
-See [docs/adr/0001-jaeger-ui-in-grafana.md](docs/adr/0001-jaeger-ui-in-grafana.md) for the full architecture decision record.
+See [docs/adr/0001-jaeger-ui-in-grafana.md](docs/adr/0001-jaeger-ui-in-grafana.md) for the architecture decision record.
 
 ## License
 

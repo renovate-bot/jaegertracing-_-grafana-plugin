@@ -1,14 +1,14 @@
 services:
-  # Option 1: Jaeger with --query.base-path set, transparent proxy (no prefix stripping).
+  # Option 1: Jaeger with base_path set, transparent proxy (no prefix stripping).
   # httpd1 passes /jaeger/ui/* through to jaeger1:16686/jaeger/ui/* unchanged.
   jaeger1:
-    image: jaegertracing/jaeger:2.17.0
+    image: jaegertracing/jaeger:2.18.0
     command: "--set extensions.jaeger_query.base_path=/jaeger/ui"
     networks:
       - proxy-net
 
   hotrod1:
-    image: jaegertracing/example-hotrod:2.17.0
+    image: jaegertracing/example-hotrod:2.18.0
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger1:4318
     networks:
@@ -27,16 +27,17 @@ services:
     depends_on:
       - jaeger1
 
-  # Option 2: Jaeger without base_path, proxy strips /jaeger/ui prefix and
-  # rewrites <base href> in HTML responses. Allows Jaeger to serve at both
+  # Option 2: Jaeger without base_path, proxy strips /jaeger/ui prefix.
+  # Since Jaeger 2.18.0 the UI auto-detects the base path from window.location,
+  # so no response-body rewriting is needed. Allows Jaeger to serve at both
   # its own root and under the /jaeger/ui prefix simultaneously.
   jaeger2:
-    image: jaegertracing/jaeger:2.17.0
+    image: jaegertracing/jaeger:2.18.0
     networks:
       - proxy-net
 
   hotrod2:
-    image: jaegertracing/example-hotrod:2.17.0
+    image: jaegertracing/example-hotrod:2.18.0
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger2:4318
     networks:

@@ -3,5 +3,7 @@ dist/
 .eslintcache
 playwright/.auth/
 playwright/.report/
+playwright/.report-reverse-proxy/
 playwright/.test-results/
+playwright/.test-results-reverse-proxy/
 

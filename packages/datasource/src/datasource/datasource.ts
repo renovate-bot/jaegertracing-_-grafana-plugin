@@ -4,25 +4,23 @@ import {
   DataQueryResponse,
   DataSourceApi,
   DataSourceInstanceSettings,
+  DataSourceJsonData,
   FieldType,
-  MutableDataFrame,
   TimeRange,
+  createDataFrame,
 } from '@grafana/data';
 import { getBackendSrv, getTemplateSrv, isFetchError } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
-import { JaegerDataSourceOptions, JaegerQuery } from '../types';
+import { JaegerQuery } from '../types';
 
-export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourceOptions> {
-  readonly proxyUrl: string;
+export class JaegerDataSource extends DataSourceApi<JaegerQuery, DataSourceJsonData> {
+  readonly baseUrl: string;
 
-  constructor(instanceSettings: DataSourceInstanceSettings<JaegerDataSourceOptions>) {
+  constructor(instanceSettings: DataSourceInstanceSettings<DataSourceJsonData>) {
     super(instanceSettings);
-    // In proxy mode, route API calls through CallResource (/api/datasources/uid/<uid>/resources)
-    // so they are forwarded by the Go backend to the internal Jaeger URL.
-    // In direct mode, use Grafana's built-in data proxy (instanceSettings.url → datasource url field).
-    this.proxyUrl = instanceSettings.jsonData.proxyMode
-      ? `/api/datasources/uid/${instanceSettings.uid}/resources`
-      : instanceSettings.url!;
+    // instanceSettings.url is the datasource URL configured by the operator — the same
+    // browser-accessible Jaeger origin used by the panel iframe.
+    this.baseUrl = (instanceSettings.url ?? '').replace(/\/+$/, '');
   }
 
   async query(request: DataQueryRequest<JaegerQuery>): Promise<DataQueryResponse> {
@@ -34,7 +32,7 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
     return { data: results.flat() };
   }
 
-  private async runQuery(query: JaegerQuery, range: TimeRange): Promise<MutableDataFrame[]> {
+  private async runQuery(query: JaegerQuery, range: TimeRange): Promise<Array<ReturnType<typeof createDataFrame>>> {
     const interpolated: JaegerQuery = {
       ...query,
       traceId: query.traceId ? getTemplateSrv().replace(query.traceId) : query.traceId,
@@ -48,18 +46,16 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
     return interpolated.service ? this.fetchTraces(interpolated, range) : [];
   }
 
-  private fetchTrace(traceId: string): MutableDataFrame[] {
+  private fetchTrace(traceId: string): Array<ReturnType<typeof createDataFrame>> {
     // No API call needed: the panel renders the trace via iframe, which fetches it directly.
-    const frame = new MutableDataFrame({
+    return [createDataFrame({
       name: traceId,
       meta: { preferredVisualisationPluginId: 'jaegertracing-jaeger-panel' },
-      fields: [{ name: 'traceID', type: FieldType.string }],
-    });
-    frame.add({ traceID: traceId });
-    return [frame];
+      fields: [{ name: 'traceID', type: FieldType.string, values: [traceId] }],
+    })];
   }
 
-  private async fetchTraces(query: JaegerQuery, range: TimeRange): Promise<MutableDataFrame[]> {
+  private async fetchTraces(query: JaegerQuery, range: TimeRange): Promise<Array<ReturnType<typeof createDataFrame>>> {
     const params = new URLSearchParams({ service: query.service ?? '' });
     // Jaeger expects start/end in microseconds
     params.set('start', String(range.from.valueOf() * 1000));
@@ -102,7 +98,7 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
 
     const response = await lastValueFrom(
       getBackendSrv().fetch<{ data: JaegerTrace[] }>({
-        url: `${this.proxyUrl}/api/traces?${params}`,
+        url: `${this.baseUrl}/api/traces?${params}`,
       })
     );
 
@@ -116,15 +112,10 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
       },
     };
 
-    const frame = new MutableDataFrame({
-      name: 'traces',
-      fields: [
-        { name: 'traceID', type: FieldType.string, config: { links: [traceLink] } },
-        { name: 'traceName', type: FieldType.string },
-        { name: 'spanCount', type: FieldType.number },
-        { name: 'duration', type: FieldType.number, config: { unit: 'µs' } },
-      ],
-    });
+    const traceIDs: string[] = [];
+    const traceNames: string[] = [];
+    const spanCounts: number[] = [];
+    const durations: number[] = [];
 
     for (const trace of response.data.data ?? []) {
       const spans: JaegerSpan[] = Array.isArray(trace.spans) ? trace.spans : [];
@@ -133,22 +124,28 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
         ?? spans.reduce((a, b) => (a.startTime < b.startTime ? a : b), spans[0]);
       const service = rootSpan ? (trace.processes[rootSpan.processID]?.serviceName ?? '') : '';
       const operation = rootSpan?.operationName ?? '';
-      frame.add({
-        traceID: trace.traceID,
-        traceName: service && operation ? `${service}: ${operation}` : operation,
-        spanCount: spans.length,
-        duration: rootSpan?.duration ?? 0,
-      });
+      traceIDs.push(trace.traceID);
+      traceNames.push(service && operation ? `${service}: ${operation}` : operation);
+      spanCounts.push(spans.length);
+      durations.push(rootSpan?.duration ?? 0);
     }
 
-    return [frame];
+    return [createDataFrame({
+      name: 'traces',
+      fields: [
+        { name: 'traceID', type: FieldType.string, values: traceIDs, config: { links: [traceLink] } },
+        { name: 'traceName', type: FieldType.string, values: traceNames },
+        { name: 'spanCount', type: FieldType.number, values: spanCounts },
+        { name: 'duration', type: FieldType.number, values: durations, config: { unit: 'µs' } },
+      ],
+    })];
   }
 
   async testDatasource(): Promise<{ status: string; message: string }> {
     try {
       await lastValueFrom(
         getBackendSrv().fetch({
-          url: `${this.proxyUrl}/api/services`,
+          url: `${this.baseUrl}/api/services`,
         })
       );
       return { status: 'success', message: 'Successfully connected to Jaeger' };
@@ -161,7 +158,7 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
   async getServices(): Promise<string[]> {
     const response = await lastValueFrom(
       getBackendSrv().fetch<{ data: string[] }>({
-        url: `${this.proxyUrl}/api/services`,
+        url: `${this.baseUrl}/api/services`,
       })
     );
     return response.data.data ?? [];
@@ -170,7 +167,7 @@ export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourc
   async getOperations(service: string): Promise<string[]> {
     const response = await lastValueFrom(
       getBackendSrv().fetch<{ data: string[] }>({
-        url: `${this.proxyUrl}/api/services/${encodeURIComponent(service)}/operations`,
+        url: `${this.baseUrl}/api/services/${encodeURIComponent(service)}/operations`,
       })
     );
     return response.data.data ?? [];

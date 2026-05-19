@@ -18,18 +18,11 @@
     "version": "%VERSION%",
     "updated": "%TODAY%"
   },
-  "backend": true,
-  "executable": "gpx_jaeger",
+  "backend": false,
   "metrics": true,
   "tracing": true,
   "dependencies": {
     "grafanaDependency": ">=12.3.0",
     "plugins": []
-  },
-  "routes": [
-    {
-      "path": "api",
-      "url": "{{ .URL }}/api"
-    }
-  ]
+  }
 }
