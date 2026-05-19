@@ -1,0 +1,67 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    ":gitSignOff"
+  ],
+  "dependencyDashboard": true,
+  "dependencyDashboardHeader": "Project settings are at https://developer.mend.io/",
+  "labels": [
+    "changelog:dependencies"
+  ],
+  "suppressNotifications": [
+    "prEditedNotification"
+  ],
+  "schedule": [
+    "on the first day of the month"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "on the first day of the month"
+    ]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security", "changelog:dependencies"]
+  },
+  "packageRules": [
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "github-actions deps"
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
+      "enabled": false
+    },
+    {
+      "groupName": "npm patch updates",
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "patch",
+        "digest"
+      ],
+      "enabled": false
+    },
+    {
+      "groupName": "All Jaeger Docker images",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "jaegertracing/jaeger",
+        "jaegertracing/example-hotrod"
+      ]
+    }
+  ]
+}
