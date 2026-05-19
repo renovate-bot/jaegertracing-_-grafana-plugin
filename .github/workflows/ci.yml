@@ -232,7 +232,7 @@ jobs:
           persist-credentials: false
 
       - name: Download plugin
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: packages/panel/dist
           name: ${{ needs.build-panel.outputs.plugin-id }}-${{ needs.build-panel.outputs.plugin-version }}
