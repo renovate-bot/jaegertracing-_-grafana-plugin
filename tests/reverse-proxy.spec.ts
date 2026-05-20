@@ -20,22 +20,20 @@ const DATASOURCES = [
     label: 'Option 1 (transparent proxy)',
     uid: 'jaeger-option1',
     name: 'Jaeger-Option1',
+    expectedProxyURL: 'http://httpd1/jaeger/ui',
     expectedPublicURL: 'http://localhost:18080/jaeger/ui',
   },
   {
     label: 'Option 2 (prefix stripping)',
     uid: 'jaeger-option2',
     name: 'Jaeger-Option2',
+    expectedProxyURL: 'http://httpd2/jaeger/ui',
     expectedPublicURL: 'http://localhost:18081/jaeger/ui',
   },
 ];
 
 for (const ds of DATASOURCES) {
   test(`${ds.label}: /api/services returns data via public URL`, async ({ request }) => {
-    // Uses Playwright's request context (outside the browser) to validate proxy-layer
-    // reachability — the same network path the browser datasource code will take.
-    // CORS is not a concern here: in the recommended same-origin ingress deployment
-    // the API calls are same-origin (Jaeger served under the Grafana origin prefix).
     const resp = await request.get(`${ds.expectedPublicURL}/api/services`);
     await expect(resp).toBeOK();
     const body = await resp.json();
@@ -43,11 +41,22 @@ for (const ds of DATASOURCES) {
     expect(body.data.length).toBeGreaterThan(0);
   });
 
-  test(`${ds.label}: datasource url is set to proxy address`, async ({ request }) => {
+  test(`${ds.label}: /api/services returns data via Grafana DataProxy`, async ({ request }) => {
+    const resp = await request.get(`/api/datasources/proxy/uid/${ds.uid}/api/services`);
+    await expect(resp).toBeOK();
+    const body = await resp.json();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data.length).toBeGreaterThan(0);
+  });
+
+  test(`${ds.label}: datasource url (proxy) and publicUrl are provisioned correctly`, async ({ request }) => {
     const resp = await request.get(`/api/datasources/uid/${ds.uid}`);
     await expect(resp).toBeOK();
     const body = await resp.json();
-    expect(body.url).toBe(ds.expectedPublicURL);
+    // url = internal address used by Grafana DataProxy for API calls
+    expect(body.url).toBe(ds.expectedProxyURL);
+    // jsonData.publicUrl = browser-accessible address used by the panel iframe
+    expect(body.jsonData?.publicUrl).toBe(ds.expectedPublicURL);
   });
 
   test(`${ds.label}: datasource config page loads`, async ({ page }) => {

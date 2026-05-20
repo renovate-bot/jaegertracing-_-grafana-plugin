@@ -5,11 +5,17 @@ datasources:
   - name: Jaeger-Option1
     uid: jaeger-option1
     type: jaegertracing-jaeger-datasource
-    url: http://localhost:18080/jaeger/ui
+    url: http://httpd1/jaeger/ui
+    access: proxy
     isDefault: true
+    jsonData:
+      publicUrl: http://localhost:18080/jaeger/ui
 
   # Option 2: prefix-stripping proxy, base path auto-detected by Jaeger UI (since 2.18.0)
   - name: Jaeger-Option2
     uid: jaeger-option2
     type: jaegertracing-jaeger-datasource
-    url: http://localhost:18081/jaeger/ui
+    url: http://httpd2/jaeger/ui
+    access: proxy
+    jsonData:
+      publicUrl: http://localhost:18081/jaeger/ui
