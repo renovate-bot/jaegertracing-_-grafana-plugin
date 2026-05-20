@@ -90,7 +90,7 @@ The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on every push and 
 1. **build-panel**: typecheck → lint → unit tests → build → sign (if token present) → package → `plugin-validator-cli`
 2. **build-datasource**: typecheck → lint → unit tests → build
 3. **resolve-versions**: resolves the Grafana version matrix for e2e tests (via `grafana/plugin-actions/e2e-version`)
-4. **playwright-tests**: runs the direct deployment e2e tests (`tests/panel.spec.ts`) against each resolved Grafana version using `packages/panel/docker-compose.yaml`
+4. **playwright-tests**: runs the direct deployment e2e tests (`tests/panel.spec.ts`) against each resolved Grafana version using the root `docker-compose.yaml` (Grafana + Jaeger + HotRod)
 5. **publish-report**: publishes the Playwright HTML report to GitHub Pages
 
 The reverse-proxy e2e tests also run in CI as the `reverse-proxy-tests` job (`build` → `reverse-proxy-tests`).
