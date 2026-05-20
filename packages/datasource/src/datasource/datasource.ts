@@ -4,23 +4,24 @@ import {
   DataQueryResponse,
   DataSourceApi,
   DataSourceInstanceSettings,
-  DataSourceJsonData,
   FieldType,
   TimeRange,
   createDataFrame,
 } from '@grafana/data';
 import { getBackendSrv, getTemplateSrv, isFetchError } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
-import { JaegerQuery } from '../types';
+import { JaegerDataSourceOptions, JaegerQuery } from '../types';
 
-export class JaegerDataSource extends DataSourceApi<JaegerQuery, DataSourceJsonData> {
+export class JaegerDataSource extends DataSourceApi<JaegerQuery, JaegerDataSourceOptions> {
   readonly baseUrl: string;
+  readonly publicUrl: string;
 
-  constructor(instanceSettings: DataSourceInstanceSettings<DataSourceJsonData>) {
+  constructor(instanceSettings: DataSourceInstanceSettings<JaegerDataSourceOptions>) {
     super(instanceSettings);
-    // instanceSettings.url is the datasource URL configured by the operator — the same
-    // browser-accessible Jaeger origin used by the panel iframe.
+    // baseUrl: the Grafana DataProxy path used for server-side API calls (no CORS needed).
     this.baseUrl = (instanceSettings.url ?? '').replace(/\/+$/, '');
+    // publicUrl: the browser-accessible Jaeger URL used for the panel iframe.
+    this.publicUrl = (instanceSettings.jsonData.publicUrl ?? '').replace(/\/+$/, '');
   }
 
   async query(request: DataQueryRequest<JaegerQuery>): Promise<DataQueryResponse> {

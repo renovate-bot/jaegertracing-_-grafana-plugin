@@ -41,13 +41,15 @@ Restart Grafana.
 Install the **Jaeger datasource** plugin and add a datasource for each Jaeger instance:
 
 1. Go to **Connections → Data sources → Add new data source** and choose **Jaeger**.
-2. Set **URL** to the browser-accessible address of Jaeger (e.g. `http://localhost:16686`). This is used both as the iframe source and for all API calls (health checks, fetching services/traces). In a reverse-proxy deployment this is the proxy address including any path prefix.
+2. Leave **Access** as **Server (default)**. Grafana's backend proxy forwards API calls server-side — no CORS configuration required on Jaeger.
+3. Set **URL** to the address of Jaeger reachable from the **Grafana server** (e.g. `http://jaeger:16686` in Docker, or `http://localhost:16686` for a local setup).
+4. Set **Public URL** to the address of Jaeger reachable from the **browser** (e.g. `http://localhost:16686`). The panel uses this as the iframe `src` to render Jaeger UI.
 
 ## Panel options
 
 | Option | Description |
 |--------|-------------|
-| **Jaeger datasource** | Select the Jaeger datasource. The panel reads its **URL** field to build the iframe src. |
+| **Jaeger datasource** | Select the Jaeger datasource. The panel reads its **Public URL** field to build the iframe src. |
 | **Mode** | `Single trace`, `Trace diff`, or `Search` |
 | **Trace ID** | Trace ID to display. Supports dashboard variables: `${traceId}` |
 | **Trace ID (B)** | Second trace ID for diff mode. Supports dashboard variables |

@@ -4,5 +4,8 @@ datasources:
   - name: Jaeger
     uid: jaeger
     type: jaegertracing-jaeger-datasource
-    url: http://localhost:16686
+    url: http://jaeger:16686
+    access: proxy
     isDefault: true
+    jsonData:
+      publicUrl: http://localhost:16686

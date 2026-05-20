@@ -12,7 +12,7 @@ jest.mock('@grafana/runtime', () => ({
 const mockGetBackendSrv = getBackendSrv as jest.Mock;
 const mockGetTemplateSrv = getTemplateSrv as jest.Mock;
 
-function makeInstance(url = 'http://localhost:16686') {
+function makeInstance(url = 'http://localhost:16686', publicUrl?: string) {
   return new JaegerDataSource({
     uid: 'test-uid',
     id: 1,
@@ -20,7 +20,7 @@ function makeInstance(url = 'http://localhost:16686') {
     type: 'jaegertracing-jaeger-datasource',
     url,
     access: 'proxy',
-    jsonData: {},
+    jsonData: publicUrl ? { publicUrl } : {},
     readOnly: false,
   } as any);
 }
@@ -33,6 +33,16 @@ describe('JaegerDataSource — constructor', () => {
   it('uses instanceSettings.url as baseUrl', () => {
     const ds = makeInstance('http://jaeger.example.com/jaeger');
     expect(ds.baseUrl).toBe('http://jaeger.example.com/jaeger');
+  });
+
+  it('uses jsonData.publicUrl as publicUrl', () => {
+    const ds = makeInstance('http://jaeger:16686', 'http://localhost:16686');
+    expect(ds.publicUrl).toBe('http://localhost:16686');
+  });
+
+  it('publicUrl defaults to empty string when not set', () => {
+    const ds = makeInstance('http://jaeger:16686');
+    expect(ds.publicUrl).toBe('');
   });
 });
 
