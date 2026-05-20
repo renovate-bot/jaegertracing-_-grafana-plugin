@@ -1,7 +1,7 @@
 import React from 'react';
 import { FieldType, PanelProps } from '@grafana/data';
 import { getDataSourceSrv } from '@grafana/runtime';
-import { JaegerPanelOptions } from 'types';
+import { JaegerPanelOptions } from '../types';
 
 type Props = PanelProps<JaegerPanelOptions>;
 
