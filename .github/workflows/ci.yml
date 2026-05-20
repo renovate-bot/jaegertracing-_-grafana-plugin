@@ -56,10 +56,11 @@ jobs:
       - name: Check for E2E
         id: check-for-e2e
         run: |
-          if [ -f "../../playwright/config.ts" ]
+          if [ -f "playwright/config.ts" ]
           then
             echo "has-e2e=true" >> $GITHUB_OUTPUT
           fi
+        working-directory: .
 
       - name: Sign plugin
         run: npm run sign
@@ -110,6 +111,9 @@ jobs:
     defaults:
       run:
         working-directory: packages/datasource
+    outputs:
+      plugin-id: ${{ steps.metadata.outputs.plugin-id }}
+      plugin-version: ${{ steps.metadata.outputs.plugin-version }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
@@ -133,6 +137,21 @@ jobs:
         run: npm run test:ci
       - name: Build frontend
         run: npm run build
+
+      - name: Get plugin metadata
+        id: metadata
+        run: |
+          export GRAFANA_PLUGIN_ID=$(cat dist/plugin.json | jq -r .id)
+          export GRAFANA_PLUGIN_VERSION=$(cat dist/plugin.json | jq -r .info.version)
+          echo "plugin-id=${GRAFANA_PLUGIN_ID}" >> $GITHUB_OUTPUT
+          echo "plugin-version=${GRAFANA_PLUGIN_VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Archive Build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ steps.metadata.outputs.plugin-id }}-${{ steps.metadata.outputs.plugin-version }}
+          path: packages/datasource/dist
+          retention-days: 5
 
   reverse-proxy-tests:
     name: Reverse-proxy e2e tests
@@ -214,7 +233,7 @@ jobs:
           version-resolver-type: version-support-policy
 
   playwright-tests:
-    needs: [resolve-versions, build-panel]
+    needs: [resolve-versions, build-panel, build-datasource]
     timeout-minutes: 15
     permissions:
       contents: read
@@ -231,11 +250,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download plugin
+      - name: Download panel plugin
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: packages/panel/dist
           name: ${{ needs.build-panel.outputs.plugin-id }}-${{ needs.build-panel.outputs.plugin-version }}
+
+      - name: Download datasource plugin
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: packages/datasource/dist
+          name: ${{ needs.build-datasource.outputs.plugin-id }}-${{ needs.build-datasource.outputs.plugin-version }}
 
       - name: Setup Node.js environment
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
@@ -251,7 +276,6 @@ jobs:
         run: |
           docker compose pull
           ANONYMOUS_AUTH_ENABLED=false DEVELOPMENT=false GRAFANA_VERSION=${{ matrix.GRAFANA_IMAGE.VERSION }} GRAFANA_IMAGE=${{ matrix.GRAFANA_IMAGE.NAME }} docker compose up -d
-        working-directory: packages/panel
 
       - name: Wait for grafana server
         uses: grafana/plugin-actions/wait-for-grafana@016148f3c2f244edb17da23f0d9aa0661b6dbf6f # wait-for-grafana/v1.0.3
@@ -277,13 +301,10 @@ jobs:
 
       - name: Docker logs
         if: ${{ always() && steps.run-tests.outcome == 'failure' }}
-        run: |
-          docker logs jaegertracing-jaeger-panel >& grafana-server.log
-        working-directory: packages/panel
+        run: docker compose logs
 
       - name: Stop grafana docker
         run: docker compose down
-        working-directory: packages/panel
 
   publish-report:
     if: ${{ always() && !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

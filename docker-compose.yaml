@@ -3,8 +3,8 @@ services:
     user: root
     container_name: jaegertracing-grafana
     build:
-      context: packages/panel
-      dockerfile: .config/Dockerfile
+      context: packages/panel/.config
+      dockerfile: Dockerfile
       args:
         grafana_image: ${GRAFANA_IMAGE:-grafana}
         grafana_version: ${GRAFANA_VERSION:-12.4.0}
