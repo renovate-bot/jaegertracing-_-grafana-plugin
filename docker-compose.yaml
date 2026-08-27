@@ -26,7 +26,7 @@ services:
     # Default is a snapshot build identified by its git SHA tag (immutable — not republished).
     # Override the full image reference to use a release or different snapshot, e.g.:
     #   JAEGER_IMAGE=jaegertracing/jaeger:2.18.0 make server
-    image: ${JAEGER_IMAGE:-jaegertracing/jaeger-snapshot:6102e1d23f6a6e7db76e8a595b94a12c55b35a86}
+    image: ${JAEGER_IMAGE:-jaegertracing/jaeger-snapshot:6102e1d23f6a6e7db76e8a595b94a12c55b35a86@sha256:753cfde09e32f6ced9794bbc397974bbbed5128a6ff5756844e8b46531b3cbd6}
     container_name: jaegertracing-jaeger
     ports:
       - "16686:16686"
